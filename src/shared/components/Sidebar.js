@@ -22,6 +22,7 @@ const navItems = [
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combos", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
+  { href: "/dashboard/platform", label: "模型广场", icon: "storefront" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/mitm", label: "MITM", icon: "security" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
@@ -37,6 +38,16 @@ const systemItems = [
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
 ];
 
+const platformUserItems = [
+  { href: "/dashboard/platform?tab=overview", tab: "overview", label: "概览", icon: "dashboard" },
+  { href: "/dashboard/platform?tab=analytics", tab: "analytics", label: "数据看板", icon: "monitoring" },
+  { href: "/dashboard/platform?tab=keys", tab: "keys", label: "API 密钥", icon: "vpn_key" },
+  { href: "/dashboard/platform?tab=logs", tab: "logs", label: "使用日志", icon: "receipt_long" },
+  { href: "/dashboard/platform?tab=wallet", tab: "wallet", label: "钱包", icon: "account_balance_wallet" },
+  { href: "/dashboard/platform?tab=profile", tab: "profile", label: "个人资料", icon: "person" },
+  { href: "/dashboard/platform?tab=catalog", tab: "catalog", label: "模型广场", icon: "storefront" },
+];
+
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
@@ -48,11 +59,18 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [currentUser, setCurrentUser] = useState(undefined);
+  const [activePlatformTab, setActivePlatformTab] = useState("overview");
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
+    fetch("/api/auth/status")
+      .then(res => res.json())
+      .then(data => setCurrentUser(data.user || null))
+      .catch(() => {});
+
     fetch("/api/settings")
       .then(res => res.json())
       .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
@@ -73,6 +91,8 @@ export default function Sidebar({ onClose }) {
     }
     return pathname.startsWith(href);
   };
+  const isPlatformUser = currentUser?.role === "user";
+  const isPlatformItemActive = (item) => pathname.startsWith("/dashboard/platform") && activePlatformTab === item.tab;
 
   // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
   const handleUpdate = () => {
@@ -169,7 +189,41 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
+          {currentUser === undefined ? (
+            <div className="px-3 py-2 text-xs text-text-muted">Loading...</div>
+          ) : isPlatformUser ? (
+            <>
+              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+                Platform
+              </p>
+              {platformUserItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => {
+                    setActivePlatformTab(item.tab);
+                    onClose?.();
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                    isPlatformItemActive(item)
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "material-symbols-outlined text-[18px]",
+                      isPlatformItemActive(item) ? "fill-1" : "group-hover:text-primary transition-colors"
+                    )}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="text-[13px] font-medium">{item.label}</span>
+                </Link>
+              ))}
+            </>
+          ) : navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -194,7 +248,7 @@ export default function Sidebar({ onClose }) {
           ))}
 
           {/* System section */}
-          <div className="pt-3 mt-2 space-y-0.5">
+          {currentUser !== undefined && !isPlatformUser && <div className="pt-3 mt-2 space-y-0.5">
             <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
               System
             </p>
@@ -250,7 +304,7 @@ export default function Sidebar({ onClose }) {
               </div>
             )}
 
-            {systemItems.map((item) => (
+            {currentUser?.role !== "user" && systemItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -275,7 +329,7 @@ export default function Sidebar({ onClose }) {
             ))}
 
             {/* Debug items (inside System section, before Settings) */}
-            {debugItems.map((item) => {
+            {currentUser?.role !== "user" && debugItems.map((item) => {
               const show = item.href !== "/dashboard/translator" || enableTranslator;
               return show ? (
                 <Link
@@ -303,7 +357,7 @@ export default function Sidebar({ onClose }) {
             })}
 
             {/* Settings */}
-            <Link
+            {currentUser?.role !== "user" && <Link
               href="/dashboard/profile"
               onClick={onClose}
               className={cn(
@@ -322,12 +376,12 @@ export default function Sidebar({ onClose }) {
                 settings
               </span>
               <span className="text-[13px] font-medium">Settings</span>
-            </Link>
-          </div>
+            </Link>}
+          </div>}
         </nav>
 
         {/* Footer section */}
-        <div className="p-3 border-t border-border-subtle">
+        {currentUser !== undefined && !isPlatformUser && <div className="p-3 border-t border-border-subtle">
           {/* Shutdown button */}
           <Button
             variant="outline"
@@ -338,7 +392,7 @@ export default function Sidebar({ onClose }) {
           >
             Shutdown
           </Button>
-        </div>
+        </div>}
       </aside>
 
       {/* Shutdown Confirmation Modal */}

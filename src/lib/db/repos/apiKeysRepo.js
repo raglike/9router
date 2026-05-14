@@ -8,6 +8,7 @@ function rowToKey(row) {
     key: row.key,
     name: row.name,
     machineId: row.machineId,
+    subscriberId: row.subscriberId || null,
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,
   };
@@ -39,8 +40,8 @@ export async function createApiKey(name, machineId) {
     createdAt: new Date().toISOString(),
   };
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, subscriberId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, null, 1, apiKey.createdAt]
   );
   return apiKey;
 }
@@ -53,8 +54,8 @@ export async function updateApiKey(id, data) {
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, subscriberId = ?, isActive = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.subscriberId || null, merged.isActive ? 1 : 0, id]
     );
     result = merged;
   });

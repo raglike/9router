@@ -67,6 +67,24 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById,
 } from "./repos/requestDetailsRepo.js";
 
+// Platform billing
+export {
+  PLATFORM_CREDIT_UNIT_USD,
+  getPlatformPlans, getPlatformPlanById, upsertPlatformPlan, deletePlatformPlan,
+  getPlatformSubscribers, getPlatformSubscriberById, createPlatformSubscriber,
+  updatePlatformSubscriber, deletePlatformSubscriber, createSubscriberApiKey,
+  getPlatformLedger, adjustPlatformCredits, getSubscriberAccessByApiKey,
+  consumeCreditsForUsage, getPlatformOverview, createRedemptionCode,
+  getRedemptionCodes, redeemPlatformCode,
+} from "./repos/platformRepo.js";
+
+// Platform users
+export {
+  PLATFORM_ROLES, hasRole, countPlatformUsers, getPlatformUserById,
+  getPlatformUserByUsername, getPlatformUsers, createPlatformUser,
+  updatePlatformUser, validatePlatformUserCredentials, getUserPermissions,
+} from "./repos/platformUsersRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();
@@ -77,8 +95,14 @@ export async function exportDb() {
     providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
-    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt })),
+    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, subscriberId: r.subscriberId || null, isActive: r.isActive === 1, createdAt: r.createdAt })),
     combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
+    platformPlans: db.all(`SELECT * FROM platformPlans`).map((r) => ({ ...r, isActive: r.isActive === 1, data: parseJson(r.data, {}) })),
+    platformSubscribers: db.all(`SELECT * FROM platformSubscribers`).map((r) => ({ ...r, data: parseJson(r.data, {}) })),
+    platformCreditLedger: db.all(`SELECT * FROM platformCreditLedger`).map((r) => ({ ...r, meta: parseJson(r.meta, {}) })),
+    platformUsers: db.all(`SELECT * FROM platformUsers`).map((r) => ({ ...r, data: parseJson(r.data, {}) })),
+    platformRedemptionCodes: db.all(`SELECT * FROM platformRedemptionCodes`).map((r) => ({ ...r, data: parseJson(r.data, {}) })),
+    platformRedemptionClaims: db.all(`SELECT * FROM platformRedemptionClaims`),
     modelAliases: {},
     customModels: [],
     mitmAlias: {},
@@ -107,6 +131,12 @@ export async function importDb(payload) {
     db.run(`DELETE FROM proxyPools`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
+    db.run(`DELETE FROM platformPlans`);
+    db.run(`DELETE FROM platformSubscribers`);
+    db.run(`DELETE FROM platformCreditLedger`);
+    db.run(`DELETE FROM platformUsers`);
+    db.run(`DELETE FROM platformRedemptionCodes`);
+    db.run(`DELETE FROM platformRedemptionClaims`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
 
     // Settings
@@ -137,14 +167,50 @@ export async function importDb(payload) {
     }
     for (const k of payload.apiKeys || []) {
       db.run(
-        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-        [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
+        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, subscriberId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+        [k.id, k.key, k.name || null, k.machineId || null, k.subscriberId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
       );
     }
     for (const c of payload.combos || []) {
       db.run(
         `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
         [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const p of payload.platformPlans || []) {
+      db.run(
+        `INSERT OR REPLACE INTO platformPlans(id, name, description, priceCents, currency, monthlyCredits, maxRequestsPerDay, isActive, sortOrder, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [p.id, p.name, p.description || null, p.priceCents || 0, p.currency || "CNY", p.monthlyCredits || 0, p.maxRequestsPerDay || 0, p.isActive === false ? 0 : 1, p.sortOrder || 0, stringifyJson(p.data || {}), p.createdAt || new Date().toISOString(), p.updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const s of payload.platformSubscribers || []) {
+      db.run(
+        `INSERT OR REPLACE INTO platformSubscribers(id, userId, name, email, status, planId, creditBalance, periodStart, periodEnd, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [s.id, s.userId || null, s.name, s.email || null, s.status || "active", s.planId || null, s.creditBalance || 0, s.periodStart || null, s.periodEnd || null, stringifyJson(s.data || {}), s.createdAt || new Date().toISOString(), s.updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const l of payload.platformCreditLedger || []) {
+      db.run(
+        `INSERT OR REPLACE INTO platformCreditLedger(id, subscriberId, apiKey, type, amount, balanceAfter, cost, description, usageTimestamp, provider, model, endpoint, promptTokens, completionTokens, meta, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [l.id, l.subscriberId, l.apiKey || null, l.type, l.amount || 0, l.balanceAfter || 0, l.cost || 0, l.description || null, l.usageTimestamp || null, l.provider || null, l.model || null, l.endpoint || null, l.promptTokens || 0, l.completionTokens || 0, stringifyJson(l.meta || {}), l.createdAt || new Date().toISOString()]
+      );
+    }
+    for (const u of payload.platformUsers || []) {
+      db.run(
+        `INSERT OR REPLACE INTO platformUsers(id, username, email, passwordHash, displayName, role, status, subscriberId, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [u.id, u.username, u.email || null, u.passwordHash, u.displayName || u.username, u.role || "user", u.status || "active", u.subscriberId || null, stringifyJson(u.data || {}), u.createdAt || new Date().toISOString(), u.updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const r of payload.platformRedemptionCodes || []) {
+      db.run(
+        `INSERT OR REPLACE INTO platformRedemptionCodes(id, codeHash, codePrefix, codeSuffix, credits, status, maxRedemptions, redeemedCount, expiresAt, createdByUserId, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [r.id, r.codeHash, r.codePrefix, r.codeSuffix, r.credits || 0, r.status || "active", r.maxRedemptions || 1, r.redeemedCount || 0, r.expiresAt || null, r.createdByUserId || null, stringifyJson(r.data || {}), r.createdAt || new Date().toISOString(), r.updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const r of payload.platformRedemptionClaims || []) {
+      db.run(
+        `INSERT OR REPLACE INTO platformRedemptionClaims(id, codeId, subscriberId, userId, amount, balanceAfter, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+        [r.id, r.codeId, r.subscriberId, r.userId || null, r.amount || 0, r.balanceAfter || 0, r.createdAt || new Date().toISOString()]
       );
     }
     for (const [a, m] of Object.entries(payload.modelAliases || {})) {

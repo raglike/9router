@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
+import { countPlatformUsers, validatePlatformUserCredentials } from "@/lib/db/index.js";
+import { userSessionPayload } from "@/lib/auth/platformSession.js";
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
@@ -14,7 +16,7 @@ function isTunnelRequest(request, settings) {
 
 export async function POST(request) {
   try {
-    const { password } = await request.json();
+    const { username, password } = await request.json();
     const settings = await getSettings();
 
     // Block login via tunnel/tailscale if dashboard access is disabled
@@ -22,26 +24,31 @@ export async function POST(request) {
       return NextResponse.json({ error: "Dashboard access via tunnel is disabled" }, { status: 403 });
     }
 
-    // Default password is '123456' if not set
-    const storedHash = settings.password;
-
     if (settings.authMode === "oidc" && isOidcConfigured(settings)) {
       return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
     }
 
-    let isValid = false;
-    if (storedHash) {
-      isValid = await bcrypt.compare(password, storedHash);
-    } else {
-      // Use env var or default
-      const initialPassword = process.env.INITIAL_PASSWORD || "123456";
-      isValid = password === initialPassword;
+    const userCount = await countPlatformUsers();
+    if (userCount > 0) {
+      if (!username || !password) {
+        return NextResponse.json({ error: "Username and password are required" }, { status: 400 });
+      }
+
+      const user = await validatePlatformUserCredentials(username, password);
+      if (!user) return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
+
+      const cookieStore = await cookies();
+      await setDashboardAuthCookie(cookieStore, request, userSessionPayload(user));
+      return NextResponse.json({ success: true, user });
     }
 
+    // Backward-compatible bootstrap login before the first platform user is registered.
+    const storedHash = settings.password;
+    const initialPassword = process.env.INITIAL_PASSWORD || "123456";
+    const isValid = storedHash ? await bcrypt.compare(password, storedHash) : password === initialPassword;
     if (isValid) {
       const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request);
-
+      await setDashboardAuthCookie(cookieStore, request, { role: "root", bootstrap: true });
       return NextResponse.json({ success: true });
     }
 

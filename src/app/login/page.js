@@ -1,75 +1,61 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, Button, Input } from "@/shared/components";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Card, Button, Input } from "@/shared/components";
 
 export default function LoginPage() {
-  const [password, setPassword] = useState("");
+  const router = useRouter();
+  const [mode, setMode] = useState("login");
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [form, setForm] = useState({ username: "", email: "", password: "", displayName: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [hasPassword, setHasPassword] = useState(null);
-  const [authMode, setAuthMode] = useState("password");
-  const [oidcConfigured, setOidcConfigured] = useState(false);
-  const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
-  const router = useRouter();
 
   useEffect(() => {
-    async function checkAuth() {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-
+    async function loadStatus() {
       try {
-        const res = await fetch(`${baseUrl}/api/auth/status`, {
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.requireLogin === false) {
-            router.push("/dashboard");
-            router.refresh();
-            return;
-          }
-          setHasPassword(!!data.hasPassword);
-          setAuthMode(data.authMode || "password");
-          setOidcConfigured(data.oidcConfigured === true);
-          setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
-        } else {
-          // Safe fallback on non-OK response to avoid infinite loading state.
-          setHasPassword(true);
+        const res = await fetch("/api/auth/status");
+        const data = await res.json();
+        setStatus(data);
+        if (data.authenticated && data.user) {
+          router.push("/dashboard/platform");
+          router.refresh();
+          return;
         }
-      } catch (err) {
-        clearTimeout(timeoutId);
-        setHasPassword(true);
+        if ((data.userCount || 0) === 0) {
+          setMode("register");
+          setBootstrapping(true);
+        }
+      } catch {
+        setStatus({ registrationEnabled: true, userCount: 0 });
+        setMode("register");
       }
     }
-    checkAuth();
+    loadStatus();
   }, [router]);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const submit = async (event) => {
+    event.preventDefault();
     setLoading(true);
     setError("");
-
     try {
-      const res = await fetch("/api/auth/login", {
+      const path = mode === "register" ? "/api/auth/register" : "/api/auth/login";
+      const payload = mode === "register"
+        ? form
+        : { username: form.username, password: form.password };
+      const res = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(payload),
       });
-
-      if (res.ok) {
-        router.push("/dashboard");
-        router.refresh();
-      } else {
-        const data = await res.json();
-        setError(data.error || "Invalid password");
-      }
-    } catch (err) {
-      setError("An error occurred. Please try again.");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "认证失败");
+      router.push("/dashboard/platform");
+      router.refresh();
+    } catch (e) {
+      setError(e.message || "认证失败");
     } finally {
       setLoading(false);
     }
@@ -79,93 +65,109 @@ export default function LoginPage() {
     window.location.href = "/api/auth/oidc/start";
   };
 
-  const oidcAvailable = oidcConfigured && ["oidc", "both"].includes(authMode);
-  const passwordAvailable = authMode !== "oidc" || !oidcConfigured;
+  const oidcAvailable = status?.oidcConfigured && ["oidc", "both"].includes(status?.authMode);
+  const passwordAvailable = status?.authMode !== "oidc" || !status?.oidcConfigured;
 
-  // Show loading state while checking password
-  if (hasPassword === null) {
+  if (!status) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-bg p-4">
+      <div className="flex min-h-screen items-center justify-center bg-bg p-4">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          <p className="text-text-muted mt-4">Loading...</p>
+          <div className="inline-block size-8 animate-spin rounded-full border-b-2 border-primary" />
+          <p className="mt-4 text-text-muted">加载中...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg p-4 relative overflow-hidden">
-      {/* Faint grid background */}
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-bg p-4">
       <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
       <div className="relative z-10 w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
-          <p className="text-text-muted">
-            {authMode === "oidc" && oidcConfigured
-              ? "Sign in with your OIDC provider to access the dashboard"
-              : "Enter your password to access the dashboard"}
+        <div className="mb-8 text-center">
+          <h1 className="mb-2 text-3xl font-bold text-primary">9Router</h1>
+          <p className="text-sm text-text-muted">
+            {mode === "register"
+              ? bootstrapping ? "创建第一个管理员账号" : "注册普通用户账号"
+              : "登录后使用模型服务平台"}
           </p>
         </div>
 
         <Card>
           <div className="flex flex-col gap-4">
-            {oidcAvailable && (
+            {oidcAvailable && mode === "login" && (
               <Button type="button" variant="primary" className="w-full" onClick={handleOidcLogin}>
-                {oidcLoginLabel}
+                {status.oidcLoginLabel || "Sign in with OIDC"}
               </Button>
             )}
 
-            {oidcAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
+            {oidcAvailable && passwordAvailable && mode === "login" && <div className="h-px bg-border/60" />}
 
-            {passwordAvailable ? (
-              <form onSubmit={handleLogin} className="flex flex-col gap-4">
-                {((authMode === "oidc" && !oidcConfigured) || (authMode === "both" && !oidcConfigured)) && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
-                    OIDC login is enabled, but the issuer/client fields are not configured yet. Password login is still available for recovery.
-                  </p>
-                )}
+            {passwordAvailable && (
+              <form onSubmit={submit} className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium text-text-main">用户名</label>
+                  <Input
+                    value={form.username}
+                    onChange={(e) => setForm({ ...form, username: e.target.value })}
+                    placeholder="username"
+                    required
+                    autoFocus
+                  />
+                </div>
 
-                {authMode === "both" && oidcConfigured && (
-                  <p className="text-xs text-text-muted text-center">
-                    Password and OIDC login are both enabled.
-                  </p>
+                {mode === "register" && (
+                  <>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-medium text-text-main">邮箱</label>
+                      <Input
+                        type="email"
+                        value={form.email}
+                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                        placeholder="name@example.com"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-medium text-text-main">显示名称</label>
+                      <Input
+                        value={form.displayName}
+                        onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+                        placeholder="可选"
+                      />
+                    </div>
+                  </>
                 )}
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium">Password</label>
+                  <label className="text-sm font-medium text-text-main">密码</label>
                   <Input
                     type="password"
-                    placeholder="Enter password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    placeholder={mode === "register" ? "至少 8 位" : "输入密码"}
                     required
-                    autoFocus={!oidcAvailable}
                   />
                   {error && <p className="text-xs text-red-500">{error}</p>}
                 </div>
 
-                <Button
-                  type="submit"
-                  variant="primary"
-                  className="w-full"
-                  loading={loading}
-                >
-                  Login
+                <Button type="submit" variant="primary" className="w-full" loading={loading}>
+                  {mode === "register" ? "注册并进入" : "登录"}
                 </Button>
-
-                <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-                </p>
-                {hasPassword === false && (
-                  <p className="text-xs text-center text-text-muted">
-                    No custom password is set yet. The default password above will work until you change it.
-                  </p>
-                )}
               </form>
-            ) : (
-              error && <p className="text-xs text-red-500">{error}</p>
             )}
+
+            <div className="flex items-center justify-center gap-2 text-xs text-text-muted">
+              <span>{mode === "register" ? "已有账号？" : "没有账号？"}</span>
+              <button
+                type="button"
+                className="font-semibold text-primary hover:underline"
+                onClick={() => {
+                  setError("");
+                  setMode(mode === "register" ? "login" : "register");
+                }}
+              >
+                {mode === "register" ? "去登录" : "立即注册"}
+              </button>
+            </div>
           </div>
         </Card>
       </div>

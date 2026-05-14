@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { getDashboardAuthSession, verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -28,11 +28,25 @@ const ALWAYS_PROTECTED = [
 const PROTECTED_API_PATHS = [
   "/api/settings",
   "/api/keys",
+  "/api/providers",
+  "/api/provider-nodes",
+  "/api/proxy-pools",
+  "/api/combos",
+  "/api/models",
+  "/api/pricing",
   "/api/providers/client",
   "/api/provider-nodes/validate",
   "/api/cli-tools",
   "/api/mcp",
 ];
+
+const USER_DASHBOARD_PATHS = [
+  "/dashboard/platform",
+];
+
+function isUserDashboardPath(pathname) {
+  return pathname === "/dashboard" || USER_DASHBOARD_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
 
 // Routes that spawn child processes — restrict to localhost regardless of auth.
 const LOCAL_ONLY_PATHS = [
@@ -64,6 +78,15 @@ function isLocalRequest(request) {
 async function hasValidToken(request) {
   const token = request.cookies.get("auth_token")?.value;
   return await verifyDashboardAuthToken(token);
+}
+
+async function getSession(request) {
+  const token = request.cookies.get("auth_token")?.value;
+  return await getDashboardAuthSession(token);
+}
+
+function isCommonUser(session) {
+  return session?.role === "user";
 }
 
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
@@ -102,8 +125,26 @@ export async function proxy(request) {
   // Protect sensitive API endpoints (allow CLI token, JWT, or requireLogin=false)
   if (PROTECTED_API_PATHS.some((p) => pathname.startsWith(p))) {
     if (pathname === "/api/settings/require-login") return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    if (await isAuthenticated(request)) {
+      const session = await getSession(request);
+      if (
+        isCommonUser(session) &&
+        [
+          "/api/keys",
+          "/api/settings",
+          "/api/providers",
+          "/api/provider-nodes",
+          "/api/proxy-pools",
+          "/api/combos",
+          "/api/models",
+          "/api/pricing",
+        ].some((p) => pathname.startsWith(p))
+      ) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
       return NextResponse.next();
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -138,7 +179,11 @@ export async function proxy(request) {
     // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
-      if (await verifyDashboardAuthToken(token)) {
+      const session = await getDashboardAuthSession(token);
+      if (session) {
+        if (isCommonUser(session) && !isUserDashboardPath(pathname)) {
+          return NextResponse.redirect(new URL("/dashboard/platform", request.url));
+        }
         return NextResponse.next();
       } else {
         return NextResponse.redirect(new URL("/login", request.url));

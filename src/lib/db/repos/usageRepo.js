@@ -279,6 +279,13 @@ export async function saveRequestUsage(entry) {
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
     });
 
+    try {
+      const { consumeCreditsForUsage } = await import("./platformRepo.js");
+      await consumeCreditsForUsage(entry);
+    } catch (e) {
+      console.error("Failed to consume platform credits:", e);
+    }
+
     pushToRing(entry);
     statsEmitter.emit("update");
   } catch (e) {

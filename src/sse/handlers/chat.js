@@ -9,6 +9,7 @@ import {
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
+import { getSubscriberAccessByApiKey } from "@/lib/db/index.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -76,6 +77,14 @@ export async function handleChat(request, clientRawRequest = null) {
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+  }
+
+  if (apiKey) {
+    const access = await getSubscriberAccessByApiKey(apiKey);
+    if (!access.allowed) {
+      log.warn("BILLING", access.reason || "Subscription access denied");
+      return errorResponse(402, access.reason || "Subscription access denied");
     }
   }
 

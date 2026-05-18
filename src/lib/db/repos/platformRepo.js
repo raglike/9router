@@ -4,7 +4,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { TABLES, buildCreateTableSql } from "../schema.js";
 
-export const PLATFORM_CREDIT_UNIT_USD = 0.001;
+export const PLATFORM_CREDIT_UNIT_USD = 1;
 const PLATFORM_PLAN_CURRENCY = "CNY";
 
 const DEFAULT_PLANS = [

@@ -15,31 +15,43 @@ async function getUserPricing() {
   return await pricingKv.getAll();
 }
 
+function normalizePricingTree(tree, normalizePricing) {
+  const out = {};
+  for (const [provider, models] of Object.entries(tree || {})) {
+    out[provider] = {};
+    for (const [model, pricing] of Object.entries(models || {})) {
+      out[provider][model] = normalizePricing(pricing);
+    }
+  }
+  return out;
+}
+
 export async function getPricing() {
   const now = Date.now();
   if (cache.value && cache.expiresAt > now) return cache.value;
 
   const userPricing = await getUserPricing();
-  const { PROVIDER_PRICING } = await import("@/shared/constants/pricing.js");
+  const { PROVIDER_PRICING, normalizePricing } = await import("@/shared/constants/pricing.js");
   const merged = {};
 
   for (const [provider, models] of Object.entries(PROVIDER_PRICING)) {
-    merged[provider] = { ...models };
+    merged[provider] = {};
+    for (const [model, pricing] of Object.entries(models || {})) {
+      merged[provider][model] = normalizePricing(pricing);
+    }
     if (userPricing[provider]) {
       for (const [model, pricing] of Object.entries(userPricing[provider])) {
-        merged[provider][model] = merged[provider][model]
-          ? { ...merged[provider][model], ...pricing }
-          : pricing;
+        merged[provider][model] = normalizePricing(pricing);
       }
     }
   }
 
   for (const [provider, models] of Object.entries(userPricing)) {
     if (!merged[provider]) {
-      merged[provider] = { ...models };
+      merged[provider] = normalizePricingTree(models, normalizePricing);
     } else {
       for (const [model, pricing] of Object.entries(models)) {
-        if (!merged[provider][model]) merged[provider][model] = pricing;
+        if (!merged[provider][model]) merged[provider][model] = normalizePricing(pricing);
       }
     }
   }
@@ -51,21 +63,22 @@ export async function getPricing() {
 export async function getPricingForModel(provider, model) {
   if (!model) return null;
   const userPricing = await getUserPricing();
-  if (provider && userPricing[provider]?.[model]) return userPricing[provider][model];
-  const { getPricingForModel: resolveConst } = await import("@/shared/constants/pricing.js");
+  const { getPricingForModel: resolveConst, normalizePricing } = await import("@/shared/constants/pricing.js");
+  if (provider && userPricing[provider]?.[model]) return normalizePricing(userPricing[provider][model]);
   return resolveConst(provider, model);
 }
 
 // Atomic merge inside transaction (per-provider read-modify-write)
 export async function updatePricing(pricingData) {
   const db = await getAdapter();
+  const { normalizePricing } = await import("@/shared/constants/pricing.js");
   db.transaction(() => {
     for (const [provider, models] of Object.entries(pricingData)) {
       const row = db.get(`SELECT value FROM kv WHERE scope = 'pricing' AND key = ?`, [provider]);
       const current = row ? (parseJson(row.value, {}) || {}) : {};
       const merged = { ...current };
       for (const [model, pricing] of Object.entries(models)) {
-        merged[model] = pricing;
+        merged[model] = normalizePricing(pricing);
       }
       db.run(
         `INSERT INTO kv(scope, key, value) VALUES('pricing', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,

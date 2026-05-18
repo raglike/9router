@@ -3,12 +3,12 @@ import { getDisabledModels, getModelAliases, getPricingForModel, getProviderNode
 import { requirePlatformUser } from "@/lib/auth/platformSession.js";
 import { AI_MODELS } from "@/shared/constants/config";
 import { AI_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
+import { PRICING_BILLING_MODES } from "@/shared/constants/pricing.js";
 
 export const dynamic = "force-dynamic";
 
-const CREDIT_UNIT_USD = 0.001;
+const CREDIT_UNIT_USD = 1;
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
-const GPT_MODEL_PATTERN = /(^|[/:-])gpt[-_]?/i;
 const OPENROUTER_CACHE_TTL = 10 * 60 * 1000;
 
 if (!globalThis.__platformOpenRouterCache) {
@@ -22,6 +22,16 @@ function normalizeModelName(value) {
 function toPerMillionCredits(perTokenUsd) {
   const usd = Number(perTokenUsd || 0) * 1_000_000;
   return usd > 0 ? Number((usd / CREDIT_UNIT_USD).toFixed(6)) : 0;
+}
+
+function toCreditsFromUsd(usd) {
+  const value = Number(usd || 0);
+  return value > 0 ? Number((value / CREDIT_UNIT_USD).toFixed(6)) : 0;
+}
+
+function perMillionUsdToCredits(perMillionUsd) {
+  const value = Number(perMillionUsd || 0);
+  return value > 0 ? Number((value / CREDIT_UNIT_USD).toFixed(6)) : 0;
 }
 
 async function getOpenRouterPriceMap() {
@@ -80,7 +90,7 @@ function ratioOf(platformValue, openRouterValue) {
 }
 
 function buildPriceComparison(item, pricing, openRouter) {
-  if (!pricing || !openRouter?.pricing) return null;
+  if (!pricing || pricing.billingMode === PRICING_BILLING_MODES.PER_CALL || !openRouter?.pricing) return null;
   const inputRatio = ratioOf(pricing.input, openRouter.pricing.input);
   const outputRatio = ratioOf(pricing.output, openRouter.pricing.output);
   const ratios = [inputRatio, outputRatio].filter((value) => Number.isFinite(value));
@@ -91,25 +101,34 @@ function buildPriceComparison(item, pricing, openRouter) {
     pricing: openRouter.pricing,
     usd: openRouter.usd,
     ratio,
-    isGptReference: GPT_MODEL_PATTERN.test(`${item.provider}/${item.model}`),
   };
 }
 
-function buildBenchmark(models) {
-  const gptRatios = models
-    .filter((item) => item.comparison?.isGptReference && Number.isFinite(item.comparison?.ratio))
-    .map((item) => item.comparison.ratio);
-  const fallbackRatios = models
-    .filter((item) => Number.isFinite(item.comparison?.ratio))
-    .map((item) => item.comparison.ratio);
-  const pool = gptRatios.length ? gptRatios : fallbackRatios;
-  if (!pool.length) return null;
-  const ratio = Number((pool.reduce((sum, value) => sum + value, 0) / pool.length).toFixed(4));
+function toCatalogPricing(pricing) {
+  if (!pricing) return null;
+  if (pricing.billingMode === PRICING_BILLING_MODES.PER_CALL) {
+    return {
+      billingMode: PRICING_BILLING_MODES.PER_CALL,
+      perCallPriceUsd: Number(pricing.perCallPriceUsd || 0),
+      perCallUnit: Number(pricing.perCallUnit || 1),
+      perCallLabel: pricing.perCallLabel || "次",
+      perCallCredits: toCreditsFromUsd(pricing.perCallPriceUsd || 0),
+    };
+  }
   return {
-    ratio,
-    usdPerCredit: Number((CREDIT_UNIT_USD / ratio).toFixed(8)),
-    basedOn: gptRatios.length ? "gpt" : "all",
-    sampleSize: pool.length,
+    billingMode: PRICING_BILLING_MODES.TOKEN,
+    input: Number(pricing.input || 0),
+    output: Number(pricing.output || 0),
+    cached: Number(pricing.cached || 0),
+    reasoning: Number(pricing.reasoning || 0),
+    cache_creation: Number(pricing.cache_creation || 0),
+    credits: {
+      input: perMillionUsdToCredits(pricing.input),
+      output: perMillionUsdToCredits(pricing.output),
+      cached: perMillionUsdToCredits(pricing.cached),
+      reasoning: perMillionUsdToCredits(pricing.reasoning),
+      cache_creation: perMillionUsdToCredits(pricing.cache_creation),
+    },
   };
 }
 
@@ -139,22 +158,23 @@ export async function GET(request) {
       if (disabledList.includes(item.model)) continue;
 
       const fullModel = `${item.provider}/${item.model}`;
+      const modelType = item.type || "llm";
       const pricing = await getPricingForModel(item.provider, item.model);
       const openRouter = findOpenRouterPrice(openRouterPrices, item.provider, item.model);
-      if (priceMax !== null && pricing && Number(pricing.output || 0) > priceMax) continue;
+      if (priceMax !== null && pricing?.billingMode !== PRICING_BILLING_MODES.PER_CALL && Number(pricing?.output || 0) > priceMax) continue;
       const provider = AI_PROVIDERS[item.provider] || nodeMap[item.provider] || {};
       const row = {
-        id: fullModel,
+        id: `${fullModel}:${modelType}`,
         provider: item.provider,
         providerName: provider.name || item.provider,
         model: item.model,
         alias: aliases[fullModel] || item.model,
         displayName: item.name || aliases[fullModel] || item.model,
-        type: item.type || "llm",
+        type: modelType,
         tags: item.tags || [],
         context: item.context || item.contextWindow || null,
         description: item.description || provider.notice?.text || "",
-        pricing,
+        pricing: toCatalogPricing(pricing),
         comparison: buildPriceComparison(item, pricing, openRouter),
       };
       if (typeFilter && row.type !== typeFilter) continue;
@@ -165,7 +185,7 @@ export async function GET(request) {
       models.push(row);
     }
 
-    return NextResponse.json({ models, benchmark: buildBenchmark(models) });
+    return NextResponse.json({ models });
   } catch (error) {
     console.error("Error fetching platform catalog:", error);
     return NextResponse.json({ error: "Failed to fetch platform catalog" }, { status: 500 });

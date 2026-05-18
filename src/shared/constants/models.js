@@ -34,5 +34,10 @@ export function isValidModel(aliasOrId, modelId) {
 
 // Legacy AI_MODELS for backward compatibility
 export const AI_MODELS = Object.entries(MODELS).flatMap(([alias, models]) =>
-  models.map(m => ({ provider: alias, model: m.id, name: m.name }))
+  models.map((m) => ({
+    ...m,
+    provider: alias,
+    model: m.id,
+    name: m.name,
+  }))
 );

@@ -1,4 +1,5 @@
-// Pricing rates for AI models — all rates in $/1M tokens
+// Pricing rates for AI models.
+// Token rates use $/1M tokens. Per-call rates use a flat dollar price per N calls.
 //
 // Fallback order (first match wins):
 //   1. PROVIDER_PRICING[provider][model]  — provider-specific override
@@ -224,18 +225,18 @@ export function getPricingForModel(provider, model) {
 
   // 1. Provider-specific override
   if (provider && PROVIDER_PRICING[provider]?.[model]) {
-    return PROVIDER_PRICING[provider][model];
+    return normalizePricing(PROVIDER_PRICING[provider][model]);
   }
 
   // 2. Canonical model pricing (strip vendor prefix if needed: "deepseek/deepseek-chat" → "deepseek-chat")
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
-  if (MODEL_PRICING[baseModel]) return MODEL_PRICING[baseModel];
-  if (MODEL_PRICING[model]) return MODEL_PRICING[model];
+  if (MODEL_PRICING[baseModel]) return normalizePricing(MODEL_PRICING[baseModel]);
+  if (MODEL_PRICING[model]) return normalizePricing(MODEL_PRICING[model]);
 
   // 3. Pattern match
   for (const { pattern, pricing } of PATTERN_PRICING) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return pricing;
+      return normalizePricing(pricing);
     }
   }
 
@@ -247,7 +248,14 @@ export function getPricingForModel(provider, model) {
  * Returns PROVIDER_PRICING — consumers should fall back to MODEL_PRICING for unlisted models.
  */
 export function getDefaultPricing() {
-  return PROVIDER_PRICING;
+  const out = {};
+  for (const [provider, models] of Object.entries(PROVIDER_PRICING)) {
+    out[provider] = {};
+    for (const [model, pricing] of Object.entries(models)) {
+      out[provider][model] = normalizePricing(pricing);
+    }
+  }
+  return out;
 }
 
 /**
@@ -268,6 +276,8 @@ export function formatCost(cost) {
  */
 export function calculateCostFromTokens(tokens, pricing) {
   if (!tokens || !pricing) return 0;
+  const normalized = normalizePricing(pricing);
+  if (!normalized || normalized.billingMode === PRICING_BILLING_MODES.PER_CALL) return 0;
 
   let cost = 0;
 
@@ -275,24 +285,57 @@ export function calculateCostFromTokens(tokens, pricing) {
   const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
   const nonCachedInput = Math.max(0, inputTokens - cachedTokens);
 
-  cost += nonCachedInput * (pricing.input / 1000000);
+  cost += nonCachedInput * (normalized.input / 1000000);
 
   if (cachedTokens > 0) {
-    cost += cachedTokens * ((pricing.cached || pricing.input) / 1000000);
+    cost += cachedTokens * ((normalized.cached || normalized.input) / 1000000);
   }
 
   const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
-  cost += outputTokens * (pricing.output / 1000000);
+  cost += outputTokens * (normalized.output / 1000000);
 
   const reasoningTokens = tokens.reasoning_tokens || 0;
   if (reasoningTokens > 0) {
-    cost += reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000);
+    cost += reasoningTokens * ((normalized.reasoning || normalized.output) / 1000000);
   }
 
   const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
   if (cacheCreationTokens > 0) {
-    cost += cacheCreationTokens * ((pricing.cache_creation || pricing.input) / 1000000);
+    cost += cacheCreationTokens * ((normalized.cache_creation || normalized.input) / 1000000);
   }
 
   return cost;
+}
+
+export function calculatePerCallCost(pricing, calls = 1) {
+  const normalized = normalizePricing(pricing);
+  if (!normalized || normalized.billingMode !== PRICING_BILLING_MODES.PER_CALL) return 0;
+  const safeCalls = Math.max(0, Number(calls || 0));
+  if (!safeCalls) return 0;
+  return (normalized.perCallPriceUsd / normalized.perCallUnit) * safeCalls;
+}
+export const PRICING_BILLING_MODES = {
+  TOKEN: "token",
+  PER_CALL: "per_call",
+};
+
+export function normalizePricing(pricing) {
+  if (!pricing || typeof pricing !== "object") return null;
+  if (pricing.billingMode === PRICING_BILLING_MODES.PER_CALL) {
+    const unit = Math.max(1, Number(pricing.perCallUnit || 1));
+    return {
+      billingMode: PRICING_BILLING_MODES.PER_CALL,
+      perCallPriceUsd: Number(pricing.perCallPriceUsd || 0),
+      perCallUnit: Number.isFinite(unit) ? Math.trunc(unit) : 1,
+      perCallLabel: String(pricing.perCallLabel || "次"),
+    };
+  }
+  return {
+    billingMode: PRICING_BILLING_MODES.TOKEN,
+    input: Number(pricing.input || 0),
+    output: Number(pricing.output || 0),
+    cached: Number(pricing.cached || 0),
+    reasoning: Number(pricing.reasoning || 0),
+    cache_creation: Number(pricing.cache_creation || 0),
+  };
 }

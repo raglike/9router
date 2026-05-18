@@ -22,7 +22,11 @@ const USER_TABS = [
 
 const money = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" });
 const number = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
-const PLATFORM_CREDIT_UNIT_USD = 0.001;
+const PLATFORM_CREDIT_UNIT_USD = 1;
+const PRICING_BILLING_MODES = {
+  TOKEN: "token",
+  PER_CALL: "per_call",
+};
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -47,8 +51,8 @@ function formatUsd(value = 0) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(Number(value || 0));
 }
 
-function creditsToUsd(credits, benchmark) {
-  const usdPerCredit = Number(benchmark?.usdPerCredit || PLATFORM_CREDIT_UNIT_USD);
+function creditsToUsd(credits) {
+  const usdPerCredit = PLATFORM_CREDIT_UNIT_USD;
   return Number(credits || 0) * usdPerCredit;
 }
 
@@ -57,6 +61,87 @@ function maskApiKey(key) {
   if (key.length <= 14) return `${key.slice(0, 3)}******${key.slice(-3)}`;
   return `${key.slice(0, 10)}********${key.slice(-6)}`;
 }
+
+function createEmptyTokenPricing() {
+  return {
+    billingMode: PRICING_BILLING_MODES.TOKEN,
+    input: 0,
+    output: 0,
+    cached: 0,
+    reasoning: 0,
+    cache_creation: 0,
+    credits: {
+      input: 0,
+      output: 0,
+      cached: 0,
+      reasoning: 0,
+      cache_creation: 0,
+    },
+  };
+}
+
+function createEmptyPerCallPricing() {
+  return {
+    billingMode: PRICING_BILLING_MODES.PER_CALL,
+    perCallPriceUsd: 0,
+    perCallUnit: 1,
+    perCallLabel: "次",
+    perCallCredits: 0,
+  };
+}
+
+function createPricingDraft(pricing) {
+  if (pricing?.billingMode === PRICING_BILLING_MODES.PER_CALL) {
+    return {
+      billingMode: PRICING_BILLING_MODES.PER_CALL,
+      perCallPriceUsd: Number(pricing.perCallPriceUsd || 0),
+      perCallUnit: Number(pricing.perCallUnit || 1),
+      perCallLabel: String(pricing.perCallLabel || "次"),
+    };
+  }
+  return {
+    billingMode: PRICING_BILLING_MODES.TOKEN,
+    input: Number(pricing?.input || 0),
+    output: Number(pricing?.output || 0),
+    cached: Number(pricing?.cached || 0),
+    reasoning: Number(pricing?.reasoning || 0),
+    cache_creation: Number(pricing?.cache_creation || 0),
+  };
+}
+
+function toCatalogPricingFromDraft(draft) {
+  if (!draft) return null;
+  if (draft.billingMode === PRICING_BILLING_MODES.PER_CALL) {
+    const perCallPriceUsd = Number(draft.perCallPriceUsd || 0);
+    return {
+      billingMode: PRICING_BILLING_MODES.PER_CALL,
+      perCallPriceUsd,
+      perCallUnit: Math.max(1, Number(draft.perCallUnit || 1)),
+      perCallLabel: String(draft.perCallLabel || "次"),
+      perCallCredits: perCallPriceUsd / PLATFORM_CREDIT_UNIT_USD,
+    };
+  }
+  const input = Number(draft.input || 0);
+  const output = Number(draft.output || 0);
+  const cached = Number(draft.cached || 0);
+  const reasoning = Number(draft.reasoning || 0);
+  const cacheCreation = Number(draft.cache_creation || 0);
+    return {
+      billingMode: PRICING_BILLING_MODES.TOKEN,
+      input,
+      output,
+      cached,
+      reasoning,
+      cache_creation: cacheCreation,
+      credits: {
+      input: input,
+      output: output,
+      cached: cached,
+      reasoning: reasoning,
+      cache_creation: cacheCreation,
+      },
+    };
+  }
 
 export default function PlatformPage() {
   return (
@@ -75,7 +160,6 @@ function PlatformPageContent() {
   const [subscribers, setSubscribers] = useState([]);
   const [ledger, setLedger] = useState([]);
   const [catalog, setCatalog] = useState([]);
-  const [catalogMeta, setCatalogMeta] = useState(null);
   const [redemptions, setRedemptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -99,7 +183,7 @@ function PlatformPageContent() {
 
       const catalogReq = api("/api/platform/catalog");
       if (auth.user?.permissions?.platformAdmin) {
-        const [overviewData, plansData, subscribersData, ledgerData, catalogData, redemptionData] = await Promise.all([
+      const [overviewData, plansData, subscribersData, ledgerData, catalogData, redemptionData] = await Promise.all([
           api("/api/platform/overview"),
           api("/api/platform/plans"),
           api("/api/platform/subscribers"),
@@ -112,7 +196,6 @@ function PlatformPageContent() {
         setSubscribers(subscribersData.subscribers || []);
         setLedger(ledgerData.ledger || []);
         setCatalog(catalogData.models || []);
-        setCatalogMeta(catalogData.benchmark || null);
         setRedemptions(redemptionData.codes || []);
       } else {
         const [platformMe, catalogData] = await Promise.all([api("/api/platform/me"), catalogReq]);
@@ -121,7 +204,6 @@ function PlatformPageContent() {
         setSubscribers(platformMe.subscriber ? [platformMe.subscriber] : []);
         setLedger(platformMe.ledger || []);
         setCatalog(catalogData.models || []);
-        setCatalogMeta(catalogData.benchmark || null);
         setRedemptions([]);
       }
     } catch (e) {
@@ -179,7 +261,7 @@ function PlatformPageContent() {
       {activeTab === "logs" && <Ledger rows={ledger} compact />}
       {activeTab === "wallet" && <Wallet subscriber={subscriber} plans={plans} ledger={ledger} onReload={load} />}
       {activeTab === "profile" && <Profile key={`${me?.user?.id || "user"}-${me?.user?.updatedAt || ""}`} user={me?.user} onReload={load} />}
-      {activeTab === "catalog" && <Catalog models={catalog} benchmark={catalogMeta} loading={loading} />}
+      {activeTab === "catalog" && <Catalog models={catalog} loading={loading} isAdmin={isAdmin} onCatalogUpdated={setCatalog} />}
       {activeTab === "subscribers" && (
         <Subscriptions
           plans={plans}
@@ -623,7 +705,7 @@ function Profile({ user, onReload }) {
   );
 }
 
-function Catalog({ models, benchmark, loading }) {
+function Catalog({ models, loading, isAdmin, onCatalogUpdated }) {
   const [query, setQuery] = useState("");
   const [provider, setProvider] = useState("");
   const [type, setType] = useState("");
@@ -658,11 +740,9 @@ function Catalog({ models, benchmark, loading }) {
           className="h-9"
         />
       </div>
-      {benchmark && (
-        <div className="border-b border-border px-4 py-2 text-xs text-text-muted">
-          GPT 基准比价：1 平台积分约等于 {formatUsd(benchmark.usdPerCredit)}，基于 {benchmark.sampleSize} 个 {benchmark.basedOn === "gpt" ? "GPT" : "可对比"} 模型样本。
-        </div>
-      )}
+      <div className="border-b border-border px-4 py-2 text-xs text-text-muted">
+        固定汇率：1 积分 = 1 美元。
+      </div>
       <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
         {loading ? <Empty text="加载中..." /> : filtered.slice(0, 240).map((model) => (
           <button key={model.id} onClick={() => setSelected(model)} className="rounded-lg border border-border bg-surface-2 p-4 text-left transition hover:border-primary/50">
@@ -675,22 +755,60 @@ function Catalog({ models, benchmark, loading }) {
             </div>
             <p className="mt-3 line-clamp-2 min-h-[40px] text-sm text-text-muted">{model.description || "暂无模型说明"}</p>
             <div className="mt-3 font-mono text-xs text-text-main">{model.provider}/{model.alias}</div>
-            <CompactPricing pricing={model.pricing} comparison={model.comparison} benchmark={benchmark} unit={priceUnit} />
+            <CompactPricing pricing={model.pricing} comparison={model.comparison} unit={priceUnit} />
           </button>
         ))}
         {!loading && filtered.length === 0 && <Empty text="暂无匹配模型" />}
       </div>
-      {selected && <ModelDetail model={selected} benchmark={benchmark} priceUnit={priceUnit} onClose={() => setSelected(null)} />}
+      {selected && <ModelDetail model={selected} priceUnit={priceUnit} isAdmin={isAdmin} onClose={() => setSelected(null)} onSaved={(nextModel) => {
+        onCatalogUpdated((current) => current.map((item) => (
+          item.provider === nextModel.provider && item.model === nextModel.model
+            ? { ...item, pricing: nextModel.pricing }
+            : item
+        )));
+        setSelected(nextModel);
+      }} />}
     </section>
   );
 }
 
-function ModelDetail({ model, benchmark, priceUnit, onClose }) {
+function ModelDetail({ model, priceUnit, isAdmin, onClose, onSaved }) {
   const baseUrl = typeof window !== "undefined" ? `${window.location.origin}/v1` : "http://localhost:20128/v1";
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState(() => createPricingDraft(model.pricing));
   const curl = `curl ${baseUrl}/chat/completions \\
   -H "Authorization: Bearer <你的 API Key>" \\
   -H "Content-Type: application/json" \\
   -d '{"model":"${model.provider}/${model.alias}","messages":[{"role":"user","content":"Hello"}]}'`;
+
+  useEffect(() => {
+    setDraft(createPricingDraft(model.pricing));
+    setEditing(false);
+  }, [model]);
+
+  const savePricing = async () => {
+    setSaving(true);
+    try {
+      await api("/api/pricing", {
+        method: "PATCH",
+        body: JSON.stringify({
+          [model.provider]: {
+            [model.model]: draft,
+          },
+        }),
+      });
+      onSaved?.({
+        ...model,
+        pricing: toCatalogPricingFromDraft(draft),
+      });
+      setEditing(false);
+    } catch (error) {
+      alert(error.message || "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
@@ -713,7 +831,53 @@ function ModelDetail({ model, benchmark, priceUnit, onClose }) {
               <div>Authorization: Bearer &lt;API Key&gt;</div>
             </div>
           </InfoBlock>
-          <PricingPanel pricing={model.pricing} comparison={model.comparison} benchmark={benchmark} unit={priceUnit} />
+          <PricingPanel pricing={model.pricing} comparison={model.comparison} unit={priceUnit} />
+          {isAdmin && (
+            <section className="rounded-lg border border-border bg-surface p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-text-main">管理员定价</h3>
+                <Button size="sm" variant={editing ? "secondary" : "outline"} onClick={() => {
+                  setEditing((value) => !value);
+                  setDraft(createPricingDraft(model.pricing));
+                }}>
+                  {editing ? "取消编辑" : "编辑定价"}
+                </Button>
+              </div>
+              {editing && (
+                <div className="mt-4 space-y-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-text-muted">计费模式</span>
+                    <select
+                      value={draft.billingMode}
+                      onChange={(e) => setDraft(e.target.value === PRICING_BILLING_MODES.PER_CALL ? createEmptyPerCallPricing() : createEmptyTokenPricing())}
+                      className="h-9 w-full rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main"
+                    >
+                      <option value={PRICING_BILLING_MODES.TOKEN}>按 Token</option>
+                      <option value={PRICING_BILLING_MODES.PER_CALL}>按次</option>
+                    </select>
+                  </label>
+                  {draft.billingMode === PRICING_BILLING_MODES.PER_CALL ? (
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <Field label="美元单价" type="number" value={draft.perCallPriceUsd} onChange={(v) => setDraft((current) => ({ ...current, perCallPriceUsd: Number(v) }))} />
+                      <Field label="单位数" type="number" value={draft.perCallUnit} onChange={(v) => setDraft((current) => ({ ...current, perCallUnit: Number(v) }))} />
+                      <Field label="单位标签" value={draft.perCallLabel} onChange={(v) => setDraft((current) => ({ ...current, perCallLabel: v }))} />
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="输入 ($/1M)" type="number" value={draft.input} onChange={(v) => setDraft((current) => ({ ...current, input: Number(v) }))} />
+                      <Field label="输出 ($/1M)" type="number" value={draft.output} onChange={(v) => setDraft((current) => ({ ...current, output: Number(v) }))} />
+                      <Field label="缓存输入 ($/1M)" type="number" value={draft.cached} onChange={(v) => setDraft((current) => ({ ...current, cached: Number(v) }))} />
+                      <Field label="推理输出 ($/1M)" type="number" value={draft.reasoning} onChange={(v) => setDraft((current) => ({ ...current, reasoning: Number(v) }))} />
+                      <Field label="缓存写入 ($/1M)" type="number" value={draft.cache_creation} onChange={(v) => setDraft((current) => ({ ...current, cache_creation: Number(v) }))} />
+                    </div>
+                  )}
+                  <div className="flex justify-end">
+                    <Button size="sm" onClick={savePricing} loading={saving}>保存定价</Button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
           <InfoBlock title="curl 示例">
             <pre className="overflow-x-auto rounded-lg bg-surface-2 p-3 text-xs text-text-main">{curl}</pre>
           </InfoBlock>
@@ -723,9 +887,9 @@ function ModelDetail({ model, benchmark, priceUnit, onClose }) {
   );
 }
 
-function PriceValue({ value, compact = false, unit = "credits", benchmark = null }) {
+function PriceValue({ value, compact = false, unit = "credits" }) {
   const credits = Number(value || 0);
-  const displayValue = unit === "usd" ? formatUsd(creditsToUsd(credits, benchmark)) : number.format(credits);
+  const displayValue = unit === "usd" ? formatUsd(creditsToUsd(credits)) : number.format(credits);
   const valueClass = compact
     ? "font-mono text-lg font-bold tabular-nums leading-none text-text-main"
     : "font-mono text-base font-semibold tabular-nums leading-none text-text-main";
@@ -769,24 +933,55 @@ function ComparisonBadge({ comparison, unit = "credits" }) {
   );
 }
 
-function CompactPricing({ pricing, comparison, benchmark = null, unit = "credits" }) {
+function PerCallPriceValue({ pricing, compact = false, unit = "credits" }) {
+  const valueClass = compact
+    ? "font-mono text-lg font-bold tabular-nums leading-none text-text-main"
+    : "font-mono text-base font-semibold tabular-nums leading-none text-text-main";
+  const unitCount = Math.max(1, Number(pricing?.perCallUnit || 1));
+  const label = pricing?.perCallLabel || "次";
+  if (unit === "usd") {
+    return (
+      <span className="inline-flex items-baseline gap-1 whitespace-nowrap leading-none">
+        <span className={valueClass}>{formatUsd(pricing?.perCallPriceUsd || 0)}</span>
+        <span className="text-[11px] font-semibold text-text-muted">/ {unitCount}{label}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-baseline gap-1 whitespace-nowrap leading-none">
+      <span className="text-[11px] font-semibold text-text-muted">积分</span>
+      <span className={valueClass}>{number.format(Number(pricing?.perCallCredits || 0))}</span>
+      <span className="text-[11px] font-semibold text-text-muted">/ {unitCount}{label}</span>
+    </span>
+  );
+}
+
+function CompactPricing({ pricing, comparison, unit = "credits" }) {
   if (!pricing) return <div className="mt-3 text-xs text-text-muted">暂无价格</div>;
+  if (pricing.billingMode === PRICING_BILLING_MODES.PER_CALL) {
+    return (
+      <div className="mt-3 rounded-lg border border-border bg-surface px-3 py-3">
+        <div className="mb-1 text-[11px] font-medium text-text-muted">按次计费</div>
+        <PerCallPriceValue pricing={pricing} compact unit={unit} />
+      </div>
+    );
+  }
   return (
     <div className="mt-3 grid grid-cols-2 gap-2">
       <div className="rounded-lg border border-border bg-surface px-3 py-2.5">
         <div className="mb-1 text-[11px] font-medium text-text-muted">输入</div>
-        <PriceValue value={pricing.input} compact unit={unit} benchmark={benchmark} />
+        <PriceValue value={pricing.credits?.input ?? pricing.input} compact unit={unit} />
       </div>
       <div className="rounded-lg border border-border bg-surface px-3 py-2.5">
         <div className="mb-1 text-[11px] font-medium text-text-muted">输出</div>
-        <PriceValue value={pricing.output} compact unit={unit} benchmark={benchmark} />
+        <PriceValue value={pricing.credits?.output ?? pricing.output} compact unit={unit} />
       </div>
       <ComparisonBadge comparison={comparison} unit={unit} />
     </div>
   );
 }
 
-function PricingPanel({ pricing, comparison, benchmark = null, unit = "credits" }) {
+function PricingPanel({ pricing, comparison, unit = "credits" }) {
   if (!pricing) {
     return (
       <InfoBlock title="定价">
@@ -795,8 +990,29 @@ function PricingPanel({ pricing, comparison, benchmark = null, unit = "credits" 
     );
   }
 
+  if (pricing.billingMode === PRICING_BILLING_MODES.PER_CALL) {
+    return (
+      <div className="rounded-lg border border-border bg-surface p-4">
+        <h3 className="text-sm font-semibold text-text-main">定价</h3>
+        <div className="mt-4 rounded-lg border border-border bg-surface-2 p-4">
+          <div className="mb-1 text-xs text-text-muted">按次价格</div>
+          <PerCallPriceValue pricing={pricing} unit={unit} />
+        </div>
+        <div className="mt-3 text-xs text-text-muted">当前模型按请求次数计费，不区分输入/输出 Token。</div>
+      </div>
+    );
+  }
+
   const groupRows = [
-    { group: "default", ratio: "1x", input: pricing.input, output: pricing.output, cached: pricing.cached, cacheCreation: pricing.cache_creation },
+    {
+      group: "default",
+      ratio: "1x",
+      input: pricing.credits?.input ?? pricing.input,
+      output: pricing.credits?.output ?? pricing.output,
+      cached: pricing.credits?.cached ?? pricing.cached,
+      cacheCreation: pricing.credits?.cache_creation ?? pricing.cache_creation,
+      reasoning: pricing.credits?.reasoning ?? pricing.reasoning,
+    },
   ];
 
   return (
@@ -806,26 +1022,26 @@ function PricingPanel({ pricing, comparison, benchmark = null, unit = "credits" 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-border bg-surface-2 p-4">
           <div className="mb-1 text-xs text-text-muted">输入</div>
-          <PriceValue value={pricing.input} unit={unit} benchmark={benchmark} />
+          <PriceValue value={pricing.credits?.input ?? pricing.input} unit={unit} />
         </div>
         <div className="rounded-lg border border-border bg-surface-2 p-4">
           <div className="mb-1 text-xs text-text-muted">输出</div>
-          <PriceValue value={pricing.output} unit={unit} benchmark={benchmark} />
+          <PriceValue value={pricing.credits?.output ?? pricing.output} unit={unit} />
         </div>
       </div>
       <div className="mt-3 rounded-lg border border-border bg-surface-2 p-4">
         <div className="flex items-center justify-between gap-3 py-1">
           <span className="text-sm text-text-muted">缓存输入</span>
-          <PriceValue value={pricing.cached ?? pricing.input} unit={unit} benchmark={benchmark} />
+          <PriceValue value={pricing.credits?.cached ?? pricing.cached ?? pricing.credits?.input ?? pricing.input} unit={unit} />
         </div>
         <div className="mt-2 flex items-center justify-between gap-3 py-1">
           <span className="text-sm text-text-muted">缓存写入</span>
-          <PriceValue value={pricing.cache_creation ?? pricing.input} unit={unit} benchmark={benchmark} />
+          <PriceValue value={pricing.credits?.cache_creation ?? pricing.cache_creation ?? pricing.credits?.input ?? pricing.input} unit={unit} />
         </div>
         {pricing.reasoning !== undefined && (
           <div className="mt-2 flex items-center justify-between gap-3 py-1">
             <span className="text-sm text-text-muted">推理输出</span>
-            <PriceValue value={pricing.reasoning} unit={unit} benchmark={benchmark} />
+            <PriceValue value={pricing.credits?.reasoning ?? pricing.reasoning} unit={unit} />
           </div>
         )}
       </div>
@@ -849,10 +1065,10 @@ function PricingPanel({ pricing, comparison, benchmark = null, unit = "credits" 
               <tr key={row.group}>
                 <td className="px-2 py-3 font-semibold text-primary">• {row.group}</td>
                 <td className="px-2 py-3 text-text-muted">{row.ratio}</td>
-                <td className="px-2 py-3"><PriceValue value={row.input} unit={unit} benchmark={benchmark} /></td>
-                <td className="px-2 py-3"><PriceValue value={row.output} unit={unit} benchmark={benchmark} /></td>
-                <td className="px-2 py-3"><PriceValue value={row.cached ?? row.input} unit={unit} benchmark={benchmark} /></td>
-                <td className="px-2 py-3"><PriceValue value={row.cacheCreation ?? row.input} unit={unit} benchmark={benchmark} /></td>
+                <td className="px-2 py-3"><PriceValue value={row.input} unit={unit} /></td>
+                <td className="px-2 py-3"><PriceValue value={row.output} unit={unit} /></td>
+                <td className="px-2 py-3"><PriceValue value={row.cached ?? row.input} unit={unit} /></td>
+                <td className="px-2 py-3"><PriceValue value={row.cacheCreation ?? row.input} unit={unit} /></td>
               </tr>
             ))}
           </tbody>

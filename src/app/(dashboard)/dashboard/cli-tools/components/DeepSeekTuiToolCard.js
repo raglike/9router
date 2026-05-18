@@ -363,7 +363,7 @@ export default function DeepSeekTuiToolCard({
                             {/* Actions */}
                             <div className="flex items-center gap-2">
                                 <Button onClick={handleApply} disabled={applying || !selectedModel} variant="primary" size="sm">
-                                    {applying ? "Applying..." : "Apply 9Router Config"}
+                                    {applying ? "Applying..." : "Apply Marketplace Config"}
                                 </Button>
                                 <Button onClick={handleReset} disabled={restoring} variant="secondary" size="sm">
                                     {restoring ? "Resetting..." : "Reset to Defaults"}

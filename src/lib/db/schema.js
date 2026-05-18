@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -235,6 +235,36 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_platform_ledger_subscriber ON platformCreditLedger(subscriberId, createdAt DESC)",
       "CREATE INDEX IF NOT EXISTS idx_platform_ledger_api_key ON platformCreditLedger(apiKey)",
       "CREATE INDEX IF NOT EXISTS idx_platform_ledger_usage_ts ON platformCreditLedger(usageTimestamp DESC)",
+    ],
+  },
+  platformPaymentOrders: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      userId: "TEXT NOT NULL",
+      subscriberId: "TEXT NOT NULL",
+      planId: "TEXT NOT NULL",
+      provider: "TEXT NOT NULL",
+      channel: "TEXT NOT NULL",
+      outTradeNo: "TEXT UNIQUE NOT NULL",
+      providerTradeNo: "TEXT",
+      amountCents: "INTEGER NOT NULL",
+      currency: "TEXT NOT NULL DEFAULT 'CNY'",
+      status: "TEXT NOT NULL DEFAULT 'pending'",
+      subject: "TEXT NOT NULL",
+      creditsGranted: "REAL DEFAULT 0",
+      lastCheckedAt: "TEXT",
+      expiresAt: "TEXT",
+      paidAt: "TEXT",
+      settledAt: "TEXT",
+      meta: "TEXT NOT NULL",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_payment_out_trade_no ON platformPaymentOrders(outTradeNo)",
+      "CREATE INDEX IF NOT EXISTS idx_platform_payment_user ON platformPaymentOrders(userId, createdAt DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_platform_payment_subscriber ON platformPaymentOrders(subscriberId, createdAt DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_platform_payment_status ON platformPaymentOrders(status, createdAt DESC)",
     ],
   },
   platformRedemptionCodes: {

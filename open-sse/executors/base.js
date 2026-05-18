@@ -1,5 +1,6 @@
 import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { applyCustomActionOverride } from "../../src/lib/providerActionOverride.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -23,20 +24,24 @@ export class BaseExecutor {
     return this.getBaseUrls().length || 1;
   }
 
+  applyCustomAction(url, credentials = null) {
+    return applyCustomActionOverride(url, credentials?.providerSpecificData);
+  }
+
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";
       const normalized = baseUrl.replace(/\/$/, "");
       const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
-      return `${normalized}${path}`;
+      return this.applyCustomAction(`${normalized}${path}`, credentials);
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
       const normalized = baseUrl.replace(/\/$/, "");
-      return `${normalized}/messages`;
+      return this.applyCustomAction(`${normalized}/messages`, credentials);
     }
     const baseUrls = this.getBaseUrls();
-    return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+    return this.applyCustomAction(baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl, credentials);
   }
 
   buildHeaders(credentials, stream = true) {

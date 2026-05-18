@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { Button, Badge, Input, Modal, Select, Toggle } from "@/shared/components";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -17,6 +17,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const supportsCustomAction = !isOllamaLocal && !isAzure && !isCloudflareAi;
 
   const [formData, setFormData] = useState({
     name: "",
@@ -33,6 +34,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [customActionData, setCustomActionData] = useState({
+    enabled: false,
+    path: "",
+  });
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -41,21 +46,28 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
 
   const buildProviderSpecificData = () => {
+    const providerSpecificData = {};
+
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
-      return { baseUrl: formData.ollamaHostUrl.trim() };
+      providerSpecificData.baseUrl = formData.ollamaHostUrl.trim();
     }
     if (isAzure) {
-      return {
+      Object.assign(providerSpecificData, {
         azureEndpoint: azureData.azureEndpoint,
         apiVersion: azureData.apiVersion,
         deployment: azureData.deployment,
         organization: azureData.organization,
-      };
+      });
     }
     if (isCloudflareAi) {
-      return { accountId: cloudflareData.accountId };
+      providerSpecificData.accountId = cloudflareData.accountId;
     }
-    return undefined;
+    if (supportsCustomAction) {
+      providerSpecificData.customActionEnabled = customActionData.enabled;
+      providerSpecificData.customActionPath = customActionData.path;
+    }
+
+    return Object.keys(providerSpecificData).length > 0 ? providerSpecificData : undefined;
   };
 
   const handleValidate = async () => {
@@ -260,6 +272,25 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             Enter the model ID exactly as your compatible endpoint expects it. This model will be saved as the connection default.
           </p>
         )}
+        {supportsCustomAction && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <div className="flex flex-col gap-3">
+              <Toggle
+                checked={customActionData.enabled}
+                onChange={(enabled) => setCustomActionData((prev) => ({ ...prev, enabled }))}
+                label="Custom Action Path"
+                description="Override the forwarded upstream action/path for this connection."
+              />
+              <Input
+                label="Path"
+                value={customActionData.path}
+                onChange={(e) => setCustomActionData((prev) => ({ ...prev, path: e.target.value }))}
+                placeholder="/api/coding/paas/v4/chat/completions"
+                hint="Supports query string, for example /api/coding/paas/v4/chat/completions?beta=true"
+              />
+            </div>
+          </div>
+        )}
         {isCloudflareAi && (
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
             <h3 className="font-semibold mb-3 text-sm">Cloudflare Workers AI</h3>
@@ -335,7 +366,18 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
+          <Button
+            onClick={handleSubmit}
+            fullWidth
+            disabled={
+              saving ||
+              (!isOllamaLocal && (!formData.name || !formData.apiKey)) ||
+              (isCompatible && !formData.defaultModel.trim()) ||
+              (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) ||
+              (isCloudflareAi && !cloudflareData.accountId) ||
+              (supportsCustomAction && customActionData.enabled && !customActionData.path.trim())
+            }
+          >
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>

@@ -6,6 +6,7 @@ import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js"
 import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { applyCustomActionOverride } from "@/lib/providerActionOverride";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -103,11 +104,29 @@ export async function POST(request) {
         if (!node) {
           return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
         }
-        const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
-        const res = await fetch(modelsUrl, {
-          headers: { "Authorization": `Bearer ${apiKey}` },
-        });
-        isValid = res.ok;
+        const normalizedBase = node.baseUrl?.replace(/\/$/, "") || "";
+        if (providerSpecificData?.customActionEnabled === true) {
+          const chatUrl = applyCustomActionOverride(`${normalizedBase}/chat/completions`, providerSpecificData);
+          const res = await fetch(chatUrl, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: getDefaultModel(provider) || "gpt-4o-mini",
+              messages: [{ role: "user", content: "test" }],
+              max_tokens: 1,
+            }),
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+        } else {
+          const modelsUrl = `${normalizedBase}/models`;
+          const res = await fetch(modelsUrl, {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          });
+          isValid = res.ok;
+        }
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key",
@@ -156,17 +175,33 @@ export async function POST(request) {
           normalizedBase = normalizedBase.slice(0, -9); // remove /messages
         }
 
-        const modelsUrl = `${normalizedBase}/models`;
-
-        const res = await fetch(modelsUrl, {
-          headers: {
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-            "Authorization": `Bearer ${apiKey}`
-          },
-        });
-
-        isValid = res.ok;
+        if (providerSpecificData?.customActionEnabled === true) {
+          const messagesUrl = applyCustomActionOverride(`${normalizedBase}/messages`, providerSpecificData);
+          const res = await fetch(messagesUrl, {
+            method: "POST",
+            headers: {
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: getDefaultModel(provider) || "claude-3-5-sonnet-latest",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+        } else {
+          const modelsUrl = `${normalizedBase}/models`;
+          const res = await fetch(modelsUrl, {
+            headers: {
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "Authorization": `Bearer ${apiKey}`
+            },
+          });
+          isValid = res.ok;
+        }
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key",

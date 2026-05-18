@@ -1,4 +1,5 @@
 import { AI_PROVIDERS } from "../shared/constants/providers.js";
+import { normalizeCustomActionPath } from "./providerActionOverride.js";
 
 export function normalizeProviderId(provider) {
   if (typeof provider !== "string") return provider;
@@ -19,6 +20,21 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
   const next = providerSpecificData && typeof providerSpecificData === "object"
     ? { ...providerSpecificData }
     : {};
+
+  const rawCustomActionPath = next.customActionPath ?? body.customActionPath ?? "";
+  const customActionPath = normalizeCustomActionPath(rawCustomActionPath);
+
+  if (customActionPath) {
+    next.customActionPath = customActionPath;
+  } else {
+    delete next.customActionPath;
+  }
+
+  if (next.customActionEnabled === true && customActionPath) {
+    next.customActionEnabled = true;
+  } else {
+    delete next.customActionEnabled;
+  }
 
   if (provider === "ollama-local") {
     const baseUrl = (

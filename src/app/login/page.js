@@ -84,7 +84,8 @@ export default function LoginPage() {
       <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="mb-2 text-3xl font-bold text-primary">9Router</h1>
+          <h1 className="mb-1 text-3xl font-bold text-primary">能力集市</h1>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">API Capability Marketplace</p>
           <p className="text-sm text-text-muted">
             {mode === "register"
               ? bootstrapping ? "创建第一个管理员账号" : "注册普通用户账号"

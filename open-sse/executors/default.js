@@ -20,12 +20,12 @@ export class DefaultExecutor extends BaseExecutor {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";
       const normalized = baseUrl.replace(/\/$/, "");
       const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
-      return `${normalized}${path}`;
+      return this.applyCustomAction(`${normalized}${path}`, credentials);
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
       const normalized = baseUrl.replace(/\/$/, "");
-      return `${normalized}/messages`;
+      return this.applyCustomAction(`${normalized}/messages`, credentials);
     }
     switch (this.provider) {
       case "claude":
@@ -33,19 +33,22 @@ export class DefaultExecutor extends BaseExecutor {
       case "kimi":
       case "minimax":
       case "minimax-cn":
-        return `${this.config.baseUrl}?beta=true`;
+        return this.applyCustomAction(`${this.config.baseUrl}?beta=true`, credentials);
       case "kimi-coding":
-        return `${this.config.baseUrl}?beta=true`;
+        return this.applyCustomAction(`${this.config.baseUrl}?beta=true`, credentials);
       case "gemini":
-        return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+        return this.applyCustomAction(
+          `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`,
+          credentials
+        );
       default: {
         const url = this.config.baseUrl;
         if (url?.includes("{accountId}")) {
           const accountId = credentials?.providerSpecificData?.accountId;
           if (!accountId) throw new Error(`${this.provider} requires accountId in providerSpecificData`);
-          return url.replace("{accountId}", accountId);
+          return this.applyCustomAction(url.replace("{accountId}", accountId), credentials);
         }
-        return url;
+        return this.applyCustomAction(url, credentials);
       }
     }
   }

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -349,14 +349,86 @@ function ApiKeys({ subscriber, copiedKey, onCopyKey, onReload }) {
 function Wallet({ subscriber, plans, ledger, onReload }) {
   const [redeemCode, setRedeemCode] = useState("");
   const [redeeming, setRedeeming] = useState(false);
+  const [orders, setOrders] = useState([]);
+  const [providers, setProviders] = useState({});
+  const [paymentEnabled, setPaymentEnabled] = useState(false);
+  const [creatingKey, setCreatingKey] = useState("");
+  const [refreshingOrderId, setRefreshingOrderId] = useState("");
+  const [activeCheckout, setActiveCheckout] = useState(null);
 
-  const buy = async () => {
-    try {
-      await api("/api/platform/payments/orders", { method: "POST", body: JSON.stringify({}) });
-    } catch (e) {
-      alert(e.message);
+  const loadOrders = async ({ preserveActive = false } = {}) => {
+    const data = await api("/api/platform/payments/orders");
+    const nextOrders = data.orders || [];
+    setOrders(nextOrders);
+    setProviders(data.providers || {});
+    setPaymentEnabled(Boolean(data.paymentEnabled));
+
+    if (preserveActive && activeCheckout?.order?.id) {
+      const latest = nextOrders.find((item) => item.id === activeCheckout.order.id);
+      if (latest) {
+        setActiveCheckout((current) => ({ ...current, order: latest }));
+      }
     }
   };
+
+  useEffect(() => {
+    loadOrders().catch(() => {});
+  }, []);
+
+  const openCheckout = async (checkout) => {
+    if (!checkout) return;
+    if (checkout.type === "redirect" && checkout.url) {
+      window.open(checkout.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (checkout.type === "qr" && checkout.codeUrl) {
+      try {
+        await navigator.clipboard.writeText(checkout.codeUrl);
+        alert("二维码链接已复制，请用微信扫一扫打开。");
+      } catch {
+        alert(checkout.codeUrl);
+      }
+    }
+  };
+
+  const buy = async (plan, provider) => {
+    setCreatingKey(`${plan.id}:${provider}`);
+    try {
+      const data = await api("/api/platform/payments/orders", {
+        method: "POST",
+        body: JSON.stringify({ planId: plan.id, provider }),
+      });
+      const order = data.order || null;
+      const checkout = order?.checkout || data.action || null;
+      setActiveCheckout({ provider, order, checkout });
+      await loadOrders({ preserveActive: true });
+      await onReload();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setCreatingKey("");
+    }
+  };
+
+  const refreshOrder = async (orderId) => {
+    setRefreshingOrderId(orderId);
+    try {
+      const data = await api(`/api/platform/payments/orders/${orderId}`, { method: "POST" });
+      const nextOrder = data.order;
+      setOrders((current) => current.map((item) => (item.id === orderId ? nextOrder : item)));
+      if (activeCheckout?.order?.id === orderId) {
+        setActiveCheckout((current) => ({ ...current, order: nextOrder }));
+      }
+      await onReload();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setRefreshingOrderId("");
+    }
+  };
+
+  const paymentMethodText = paymentEnabled ? "支付宝 / 微信支付" : "手动发放 / 未配置在线支付";
+  const paymentProviderEntries = Object.values(providers || {});
 
   const redeem = async () => {
     if (!redeemCode.trim()) return;
@@ -379,7 +451,7 @@ function Wallet({ subscriber, plans, ledger, onReload }) {
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Metric label="余额" value={`${number.format(subscriber?.creditBalance || 0)} 积分`} />
           <Metric label="状态" value={subscriber?.status || "-"} />
-          <Metric label="支付方式" value="手动发放 / 支付预留" />
+          <Metric label="支付方式" value={paymentMethodText} />
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
           <input
@@ -390,7 +462,106 @@ function Wallet({ subscriber, plans, ledger, onReload }) {
           />
           <Button variant="secondary" icon="redeem" onClick={redeem} loading={redeeming}>兑换积分</Button>
         </div>
-        <Button className="mt-4" variant="secondary" icon="payments" onClick={buy}>在线支付入口</Button>
+        {!paymentEnabled && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+            当前未检测到可用的在线支付配置。
+          </div>
+        )}
+        {activeCheckout?.checkout && (
+          <div className="mt-4 rounded-lg border border-border bg-surface-2 p-3">
+            <div className="font-medium text-text-main">当前待支付订单</div>
+            <div className="mt-1 text-xs text-text-muted">
+              {activeCheckout.order?.planName || activeCheckout.order?.subject || "未命名订单"}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" icon="payments" onClick={() => openCheckout(activeCheckout.checkout)}>
+                {activeCheckout.checkout.type === "qr" ? "复制二维码链接" : "打开支付页面"}
+              </Button>
+              {activeCheckout.order?.id && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="sync"
+                  onClick={() => refreshOrder(activeCheckout.order.id)}
+                  loading={refreshingOrderId === activeCheckout.order.id}
+                >
+                  刷新状态
+                </Button>
+              )}
+            </div>
+            {activeCheckout.checkout.type === "qr" && activeCheckout.checkout.codeUrl && (
+              <div className="mt-3 break-all rounded-lg bg-surface px-3 py-2 font-mono text-xs text-text-muted">
+                {activeCheckout.checkout.codeUrl}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="mt-5 rounded-lg border border-border bg-surface-2 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="font-medium text-text-main">支付订单</div>
+              <div className="text-xs text-text-muted">支付成功后会通过真实回调自动发放积分。</div>
+            </div>
+            <Button size="sm" variant="ghost" icon="refresh" onClick={() => loadOrders({ preserveActive: true })}>
+              刷新订单
+            </Button>
+          </div>
+          <div className="mt-3 flex flex-col gap-2">
+            {orders.length ? orders.map((order) => (
+              <div key={order.id} className="rounded-lg border border-border bg-surface px-3 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-text-main">{order.planName || order.subject}</div>
+                    <div className="mt-1 text-xs text-text-muted">
+                      {(order.provider === "alipay" ? "支付宝" : order.provider === "wechat" ? "微信支付" : order.provider || "-")}
+                      {" · "}
+                      {formatMoney(order.amountCents, order.currency)}
+                      {" · "}
+                      {{
+                        pending: "待支付",
+                        paid: "已支付",
+                        closed: "已关闭",
+                        failed: "支付失败",
+                      }[order.status] || order.status || "-"}
+                    </div>
+                    <div className="mt-1 font-mono text-[11px] text-text-muted">{order.outTradeNo}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    {order.status === "pending" && order.checkout && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon="visibility"
+                        onClick={() => {
+                          setActiveCheckout({ provider: order.provider, order, checkout: order.checkout });
+                          openCheckout(order.checkout);
+                        }}
+                      >
+                        继续支付
+                      </Button>
+                    )}
+                    {order.status === "pending" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon="sync"
+                        onClick={() => refreshOrder(order.id)}
+                        loading={refreshingOrderId === order.id}
+                      >
+                        刷新状态
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 text-xs text-text-muted">
+                  创建于 {formatTime(order.createdAt)}
+                  {order.paidAt ? `，支付时间 ${formatTime(order.paidAt)}` : ""}
+                  {order.creditsGranted ? `，已发放 ${number.format(order.creditsGranted)} 积分` : ""}
+                </div>
+              </div>
+            )) : <Empty text="暂无支付订单" />}
+          </div>
+        </div>
       </section>
       <section className="rounded-lg border border-border bg-surface p-4">
         <h2 className="text-base font-semibold text-text-main">可选套餐</h2>
@@ -400,6 +571,23 @@ function Wallet({ subscriber, plans, ledger, onReload }) {
               <div className="font-semibold text-text-main">{plan.name}</div>
               <div className="text-sm text-text-muted">{formatMoney(plan.priceCents, plan.currency)} / 月</div>
               <div className="mt-2 text-xs text-text-muted">{number.format(plan.monthlyCredits)} 积分</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {paymentProviderEntries.map((provider) => {
+                  const actionKey = `${plan.id}:${provider.key}`;
+                  return (
+                    <Button
+                      key={provider.key}
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => buy(plan, provider.key)}
+                      loading={creatingKey === actionKey}
+                      disabled={!provider.enabled || creatingKey !== ""}
+                    >
+                      {provider.key === "alipay" ? "支付宝支付" : "微信支付"}
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
           ))}
         </div>

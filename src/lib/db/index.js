@@ -78,6 +78,12 @@ export {
   getRedemptionCodes, redeemPlatformCode,
 } from "./repos/platformRepo.js";
 
+// Platform payments
+export {
+  listPlatformPaymentOrders, getPlatformPaymentOrderById, getPlatformPaymentOrderByOutTradeNo,
+  createPlatformPaymentOrder, updatePlatformPaymentOrder, settlePlatformPaymentOrder,
+} from "./repos/platformPaymentsRepo.js";
+
 // Platform users
 export {
   PLATFORM_ROLES, hasRole, countPlatformUsers, getPlatformUserById,
@@ -100,6 +106,7 @@ export async function exportDb() {
     platformPlans: db.all(`SELECT * FROM platformPlans`).map((r) => ({ ...r, isActive: r.isActive === 1, data: parseJson(r.data, {}) })),
     platformSubscribers: db.all(`SELECT * FROM platformSubscribers`).map((r) => ({ ...r, data: parseJson(r.data, {}) })),
     platformCreditLedger: db.all(`SELECT * FROM platformCreditLedger`).map((r) => ({ ...r, meta: parseJson(r.meta, {}) })),
+    platformPaymentOrders: db.all(`SELECT * FROM platformPaymentOrders`).map((r) => ({ ...r, meta: parseJson(r.meta, {}) })),
     platformUsers: db.all(`SELECT * FROM platformUsers`).map((r) => ({ ...r, data: parseJson(r.data, {}) })),
     platformRedemptionCodes: db.all(`SELECT * FROM platformRedemptionCodes`).map((r) => ({ ...r, data: parseJson(r.data, {}) })),
     platformRedemptionClaims: db.all(`SELECT * FROM platformRedemptionClaims`),
@@ -134,6 +141,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM platformPlans`);
     db.run(`DELETE FROM platformSubscribers`);
     db.run(`DELETE FROM platformCreditLedger`);
+    db.run(`DELETE FROM platformPaymentOrders`);
     db.run(`DELETE FROM platformUsers`);
     db.run(`DELETE FROM platformRedemptionCodes`);
     db.run(`DELETE FROM platformRedemptionClaims`);
@@ -193,6 +201,34 @@ export async function importDb(payload) {
       db.run(
         `INSERT OR REPLACE INTO platformCreditLedger(id, subscriberId, apiKey, type, amount, balanceAfter, cost, description, usageTimestamp, provider, model, endpoint, promptTokens, completionTokens, meta, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [l.id, l.subscriberId, l.apiKey || null, l.type, l.amount || 0, l.balanceAfter || 0, l.cost || 0, l.description || null, l.usageTimestamp || null, l.provider || null, l.model || null, l.endpoint || null, l.promptTokens || 0, l.completionTokens || 0, stringifyJson(l.meta || {}), l.createdAt || new Date().toISOString()]
+      );
+    }
+    for (const o of payload.platformPaymentOrders || []) {
+      db.run(
+        `INSERT OR REPLACE INTO platformPaymentOrders(id, userId, subscriberId, planId, provider, channel, outTradeNo, providerTradeNo, amountCents, currency, status, subject, creditsGranted, lastCheckedAt, expiresAt, paidAt, settledAt, meta, createdAt, updatedAt)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          o.id,
+          o.userId,
+          o.subscriberId,
+          o.planId,
+          o.provider,
+          o.channel,
+          o.outTradeNo,
+          o.providerTradeNo || null,
+          o.amountCents || 0,
+          o.currency || "CNY",
+          o.status || "pending",
+          o.subject || "",
+          o.creditsGranted || 0,
+          o.lastCheckedAt || null,
+          o.expiresAt || null,
+          o.paidAt || null,
+          o.settledAt || null,
+          stringifyJson(o.meta || {}),
+          o.createdAt || new Date().toISOString(),
+          o.updatedAt || new Date().toISOString(),
+        ]
       );
     }
     for (const u of payload.platformUsers || []) {

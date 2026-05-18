@@ -6,6 +6,7 @@ import Modal from "@/shared/components/Modal";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
+import Toggle from "@/shared/components/Toggle";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
@@ -21,6 +22,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [customActionData, setCustomActionData] = useState({
+    enabled: false,
+    path: "",
+  });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -42,10 +47,23 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           deployment: connection.providerSpecificData.deployment || "",
           organization: connection.providerSpecificData.organization || "",
         });
+      } else {
+        setAzureData({
+          azureEndpoint: "",
+          apiVersion: "2024-10-01-preview",
+          deployment: "",
+          organization: "",
+        });
       }
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
+      } else {
+        setCloudflareData({ accountId: "" });
       }
+      setCustomActionData({
+        enabled: connection.providerSpecificData?.customActionEnabled === true,
+        path: connection.providerSpecificData?.customActionPath || "",
+      });
       setTestResult(null);
       setValidationResult(null);
     }
@@ -54,9 +72,32 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const supportsCustomAction = !isOAuth && connection?.provider !== "ollama-local" && !isAzure && !isCloudflareAi;
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
+
+  const buildProviderSpecificData = () => {
+    const providerSpecificData = {};
+
+    if (isAzure) {
+      Object.assign(providerSpecificData, {
+        azureEndpoint: azureData.azureEndpoint,
+        apiVersion: azureData.apiVersion,
+        deployment: azureData.deployment,
+        organization: azureData.organization,
+      });
+    }
+    if (isCloudflareAi) {
+      providerSpecificData.accountId = cloudflareData.accountId;
+    }
+    if (supportsCustomAction) {
+      providerSpecificData.customActionEnabled = customActionData.enabled;
+      providerSpecificData.customActionPath = customActionData.path;
+    }
+
+    return Object.keys(providerSpecificData).length > 0 ? providerSpecificData : undefined;
+  };
 
   const handleTest = async () => {
     if (!connection?.provider) return;
@@ -84,8 +125,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         body: JSON.stringify({
           provider: connection.provider,
           apiKey: formData.apiKey,
-          ...(isAzure ? { providerSpecificData: azureData } : {}),
-          ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          ...(buildProviderSpecificData() ? { providerSpecificData: buildProviderSpecificData() } : {}),
         }),
       });
       const data = await res.json();
@@ -118,8 +158,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               body: JSON.stringify({
                 provider: connection.provider,
                 apiKey: formData.apiKey,
-                ...(isAzure ? { providerSpecificData: azureData } : {}),
-                ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                ...(buildProviderSpecificData() ? { providerSpecificData: buildProviderSpecificData() } : {}),
               }),
             });
             const data = await res.json();
@@ -139,16 +178,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       
       // Add Azure-specific data if this is an Azure connection
-      if (isAzure) {
-        updates.providerSpecificData = {
-          azureEndpoint: azureData.azureEndpoint,
-          apiVersion: azureData.apiVersion,
-          deployment: azureData.deployment,
-          organization: azureData.organization,
-        };
-      }
-      if (isCloudflareAi) {
-        updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      const providerSpecificData = buildProviderSpecificData();
+      if (providerSpecificData) {
+        updates.providerSpecificData = providerSpecificData;
       }
       
       await onSave(updates);
@@ -243,6 +275,26 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           </div>
         )}
 
+        {supportsCustomAction && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <div className="flex flex-col gap-3">
+              <Toggle
+                checked={customActionData.enabled}
+                onChange={(enabled) => setCustomActionData((prev) => ({ ...prev, enabled }))}
+                label="Custom Action Path"
+                description="Override the forwarded upstream action/path for this connection."
+              />
+              <Input
+                label="Path"
+                value={customActionData.path}
+                onChange={(e) => setCustomActionData((prev) => ({ ...prev, path: e.target.value }))}
+                placeholder="/api/coding/paas/v4/chat/completions"
+                hint="Supports query string, for example /api/coding/paas/v4/chat/completions?beta=true"
+              />
+            </div>
+          </div>
+        )}
+
         {!isCompatible && !isAzure && !isCloudflareAi && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
@@ -257,7 +309,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         )}
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
+          <Button
+            onClick={handleSubmit}
+            fullWidth
+            disabled={saving || (supportsCustomAction && customActionData.enabled && !customActionData.path.trim())}
+          >
+            {saving ? "Saving..." : "Save"}
+          </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
         </div>
       </div>

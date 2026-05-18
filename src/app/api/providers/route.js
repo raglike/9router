@@ -120,7 +120,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    let providerSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
+    const normalizedProviderSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
+    let providerSpecificData = normalizedProviderSpecificData;
 
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -128,6 +129,7 @@ export async function POST(request) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
       }
       providerSpecificData = {
+        ...(normalizedProviderSpecificData || {}),
         prefix: node.prefix,
         apiType: node.apiType,
         baseUrl: node.baseUrl,
@@ -139,6 +141,7 @@ export async function POST(request) {
         return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
       }
       providerSpecificData = {
+        ...(normalizedProviderSpecificData || {}),
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
@@ -149,6 +152,7 @@ export async function POST(request) {
         return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
       }
       providerSpecificData = {
+        ...(normalizedProviderSpecificData || {}),
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,

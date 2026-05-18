@@ -5,6 +5,7 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { normalizeProviderSpecificData } from "@/lib/providerNormalization";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -153,6 +154,12 @@ export async function PUT(request, { params }) {
           updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
         }
       }
+
+      updateData.providerSpecificData = normalizeProviderSpecificData(
+        existing.provider,
+        body,
+        updateData.providerSpecificData
+      );
     }
 
     const updated = await updateProviderConnection(id, updateData);

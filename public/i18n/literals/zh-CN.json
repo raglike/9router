@@ -48,6 +48,8 @@
   "API Key Created": "API 密钥已创建",
   "API Key Name": "API 密钥名称",
   "API Key Providers": "API 密钥提供商",
+  "Third-Party API Providers (OpenAI/Anthropic Compatible)": "第三方 API 提供商（OpenAI/Anthropic 兼容）",
+  "No third-party API providers — use buttons above to add OpenAI/Anthropic compatible endpoints": "暂无第三方 API 提供商，可使用上方按钮添加 OpenAI/Anthropic 兼容端点",
   "API Keys": "API 密钥",
   "API Reference": "API参考",
   "API Type": "API类型",
@@ -718,6 +720,8 @@
   "Select to pre-fill, then edit model ID in the input": "选择以预填充，然后在输入框中编辑模型 ID",
 
   "Free & Free Tier Providers": "免费及免费额度提供商",
+  "Free Tier Providers": "免费额度提供商",
+  "Model Marketplace": "模型广场",
   "Testing...": "测试中...",
   "Test All": "全部测试",
   "Ready": "就绪",

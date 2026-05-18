@@ -1,19 +1,42 @@
 import { NextResponse } from "next/server";
 import { requirePlatformUser } from "@/lib/auth/platformSession.js";
+import { createPaymentOrderForUser, getPaymentRuntime, listOrdersForUser, toPublicPaymentOrder } from "@/lib/payments/index.js";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const { response } = await requirePlatformUser();
+  const { user, response } = await requirePlatformUser();
   if (response) return response;
-  return NextResponse.json({ orders: [], paymentEnabled: false });
+  const runtime = getPaymentRuntime();
+  const orders = await listOrdersForUser(user);
+  return NextResponse.json({
+    orders,
+    paymentEnabled: runtime.paymentEnabled,
+    providers: runtime.providers,
+  });
 }
 
-export async function POST() {
-  const { response } = await requirePlatformUser();
+export async function POST(request) {
+  const { user, response } = await requirePlatformUser();
   if (response) return response;
-  return NextResponse.json(
-    { error: "在线支付暂未启用，请联系管理员手动发放积分", paymentEnabled: false },
-    { status: 501 },
-  );
+  try {
+    const body = await request.json();
+    const { runtime, order, action } = await createPaymentOrderForUser({
+      request,
+      user,
+      planId: body.planId,
+      provider: body.provider,
+    });
+    return NextResponse.json({
+      order: toPublicPaymentOrder(order),
+      action,
+      paymentEnabled: runtime.paymentEnabled,
+      providers: runtime.providers,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error.message || "创建支付订单失败", paymentEnabled: false },
+      { status: 400 },
+    );
+  }
 }

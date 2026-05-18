@@ -1,8 +1,8 @@
 export default function manifest() {
   return {
-    name: '9Router - AI Infrastructure Management',
-    short_name: '9Router',
-    description: 'One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.',
+    name: '能力集市 - API Capability Marketplace',
+    short_name: '能力集市',
+    description: 'API capability marketplace for AI providers, keys, usage, and platform credits.',
     start_url: '/',
     display: 'standalone',
     background_color: '#0a0a0a',

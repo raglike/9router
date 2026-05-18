@@ -22,7 +22,7 @@ const navItems = [
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combos", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
-  { href: "/dashboard/platform", label: "模型广场", icon: "storefront" },
+  { href: "/dashboard/platform", label: "Model Marketplace", icon: "storefront" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/mitm", label: "MITM", icon: "security" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
@@ -45,7 +45,7 @@ const platformUserItems = [
   { href: "/dashboard/platform?tab=logs", tab: "logs", label: "使用日志", icon: "receipt_long" },
   { href: "/dashboard/platform?tab=wallet", tab: "wallet", label: "钱包", icon: "account_balance_wallet" },
   { href: "/dashboard/platform?tab=profile", tab: "profile", label: "个人资料", icon: "person" },
-  { href: "/dashboard/platform?tab=catalog", tab: "catalog", label: "模型广场", icon: "storefront" },
+  { href: "/dashboard/platform?tab=catalog", tab: "catalog", label: "Model Marketplace", icon: "storefront" },
 ];
 
 export default function Sidebar({ onClose }) {
@@ -413,7 +413,7 @@ export default function Sidebar({ onClose }) {
         isOpen={showUpdateModal}
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
-        title="Update 9Router"
+        title="Update 能力集市"
         message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
         confirmText="Show Command"
         cancelText="Cancel"
@@ -464,7 +464,7 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
           <span className="material-symbols-outlined text-[24px]">content_copy</span>
         </div>
         <div>
-          <h2 className="text-lg font-semibold">Update 9Router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
+          <h2 className="text-lg font-semibold">Update 能力集市{latestVersion ? ` to v${latestVersion}` : ""}</h2>
           <p className="text-xs text-white/60">
             {isDisconnected
               ? "Server stopped. Paste the command into a terminal to install."
@@ -496,7 +496,7 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
             Cancel
           </Button>
           <Button variant="primary" fullWidth onClick={onCopyAndShutdown} disabled={isCountingDown}>
-            {copied ? "✓ Copied — shutting down..." : isCountingDown ? `Shutting down in ${countdown}s` : "Copy & Shutdown"}
+            {copied ? "Copied - shutting down..." : isCountingDown ? `Shutting down in ${countdown}s` : "Copy & Shutdown"}
           </Button>
         </div>
       )}

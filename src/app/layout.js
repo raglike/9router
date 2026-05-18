@@ -10,8 +10,8 @@ import { RuntimeI18nProvider } from "@/i18n/RuntimeI18nProvider";
 initConsoleLogCapture();
 
 export const metadata = {
-  title: "9Router - AI Infrastructure Management",
-  description: "One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.",
+  title: "能力集市 - API Capability Marketplace",
+  description: "API capability marketplace for AI providers, keys, usage, and platform credits.",
   icons: {
     icon: "/favicon.svg",
   },

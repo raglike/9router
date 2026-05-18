@@ -3,6 +3,7 @@ import { ensureToolCallIds, fixMissingToolResponses } from "./helpers/toolCallHe
 import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
 import { cloakClaudeTools } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
+import { normalizeResponsesInput } from "./helpers/responsesApiHelper.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 
@@ -113,6 +114,19 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {
     result = filterToOpenAIFormat(result);
+  }
+
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && result?.input !== undefined) {
+    const normalizedInput = normalizeResponsesInput(result.input);
+    if (normalizedInput) {
+      result = { ...result, input: normalizedInput };
+    }
+    const maxOutputTokens = result.max_output_tokens ?? result.max_completion_tokens ?? result.max_tokens;
+    if (maxOutputTokens !== undefined) {
+      result = { ...result, max_output_tokens: maxOutputTokens };
+      delete result.max_tokens;
+      delete result.max_completion_tokens;
+    }
   }
 
   // Final step: prepare request for Claude format endpoints

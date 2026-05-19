@@ -1,4 +1,4 @@
-import { buildModelsList } from "../route.js";
+import { authorizeModelsRequest, buildModelsList } from "../route.js";
 
 // URL slug → service kind(s). `web` covers both webSearch and webFetch.
 const KIND_SLUG_MAP = {
@@ -26,6 +26,9 @@ export async function OPTIONS() {
  */
 export async function GET(_request, { params }) {
   try {
+    const authError = await authorizeModelsRequest(_request);
+    if (authError) return authError;
+
     const { kind } = await params;
     const kindFilter = KIND_SLUG_MAP[kind];
 

@@ -5,8 +5,9 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getSettings } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { extractApiKey, isValidApiKey } from "@/sse/services/auth.js";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -116,6 +117,34 @@ function providerMatchesKinds(providerId, kindFilter) {
 function comboMatchesKinds(combo, kindFilter) {
   const kind = combo?.kind || LLM_KIND;
   return kindFilter.includes(kind);
+}
+
+function buildCorsHeaders(methods = "GET, OPTIONS") {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": methods,
+    "Access-Control-Allow-Headers": "*",
+  };
+}
+
+function unauthorizedResponse(message) {
+  return Response.json(
+    { error: { message, type: "authentication_error" } },
+    { status: 401, headers: buildCorsHeaders() }
+  );
+}
+
+export async function authorizeModelsRequest(request) {
+  const settings = await getSettings();
+  if (!settings?.requireApiKey) return null;
+
+  const apiKey = extractApiKey(request);
+  if (!apiKey) return unauthorizedResponse("Missing API key");
+
+  const valid = await isValidApiKey(apiKey);
+  if (!valid) return unauthorizedResponse("Invalid API key");
+
+  return null;
 }
 
 /**
@@ -374,11 +403,7 @@ export async function buildModelsList(kindFilter) {
  */
 export async function OPTIONS() {
   return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "*",
-    },
+    headers: buildCorsHeaders(),
   });
 }
 
@@ -386,17 +411,20 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const authError = await authorizeModelsRequest(request);
+    if (authError) return authError;
+
     const data = await buildModelsList([LLM_KIND]);
     return Response.json({ object: "list", data }, {
-      headers: { "Access-Control-Allow-Origin": "*" },
+      headers: buildCorsHeaders(),
     });
   } catch (error) {
     console.log("Error fetching models:", error);
     return Response.json(
       { error: { message: error.message, type: "server_error" } },
-      { status: 500 }
+      { status: 500, headers: buildCorsHeaders() }
     );
   }
 }

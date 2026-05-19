@@ -5,17 +5,17 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { joinHome } from "@/lib/runtimeUserPaths";
 
 const execAsync = promisify(exec);
 
-const getOpenClawDir = () => path.join(os.homedir(), ".openclaw");
+const getOpenClawDir = () => joinHome(".openclaw");
 const getOpenClawSettingsPath = () => path.join(getOpenClawDir(), "openclaw.json");
 
 // Check if openclaw CLI is installed (via which/where or config file exists)
 const checkOpenClawInstalled = async () => {
   try {
-    const isWindows = os.platform() === "win32";
+    const isWindows = process.platform === "win32";
     const command = isWindows ? "where openclaw" : "which openclaw";
     // On Windows, inject %APPDATA%\npm into PATH so npm global packages are found
     const env = isWindows

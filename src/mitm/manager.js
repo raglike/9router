@@ -5,6 +5,7 @@ const os = require("os");
 const net = require("net");
 const https = require("https");
 const crypto = require("crypto");
+const { getHomeDir } = require("../lib/runtimeUserPaths.cjs");
 const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, removeAllDNSEntriesSync, checkAllDNSStatus, TOOL_HOSTS, isSudoAvailable, isSudoPasswordRequired } = require("./dns/dnsConfig");
 const { isAdmin } = require("./winElevated.js");
 
@@ -596,10 +597,10 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
 
     if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
   } else if (isSudoAvailable()) {
-    // Pass HOME explicitly so os.homedir() resolves to the unprivileged user's home
+    // Pass HOME explicitly so the child keeps the unprivileged user's home
     // instead of /root when sudo resets the environment.
     const inlineCmd = [
-      `HOME=${shellQuoteSingle(os.homedir())}`,
+      `HOME=${shellQuoteSingle(getHomeDir())}`,
       `ROUTER_API_KEY=${shellQuoteSingle(apiKey)}`,
       `MITM_ROUTER_BASE=${shellQuoteSingle(mitmRouterBase)}`,
       "NODE_ENV=production",

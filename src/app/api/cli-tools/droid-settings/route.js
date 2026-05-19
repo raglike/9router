@@ -5,17 +5,17 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { joinHome } from "@/lib/runtimeUserPaths";
 
 const execAsync = promisify(exec);
 
-const getDroidDir = () => path.join(os.homedir(), ".factory");
+const getDroidDir = () => joinHome(".factory");
 const getDroidSettingsPath = () => path.join(getDroidDir(), "settings.json");
 
 // Check if droid CLI is installed (via which/where or config file exists)
 const checkDroidInstalled = async () => {
   try {
-    const isWindows = os.platform() === "win32";
+    const isWindows = process.platform === "win32";
     const command = isWindows ? "where droid" : "which droid";
     const env = isWindows
       ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }

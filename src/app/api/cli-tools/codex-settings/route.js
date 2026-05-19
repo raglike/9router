@@ -5,12 +5,12 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
 import { parseTOML, stringifyTOML } from "confbox";
+import { joinHome } from "@/lib/runtimeUserPaths";
 
 const execAsync = promisify(exec);
 
-const getCodexDir = () => path.join(os.homedir(), ".codex");
+const getCodexDir = () => joinHome(".codex");
 const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
 const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
 
@@ -44,7 +44,7 @@ const deleteNestedSection = (obj, dottedKey) => {
 // Check if codex CLI is installed (via which/where or config file exists)
 const checkCodexInstalled = async () => {
   try {
-    const isWindows = os.platform() === "win32";
+    const isWindows = process.platform === "win32";
     const command = isWindows ? "where codex" : "which codex";
     const env = isWindows
       ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }

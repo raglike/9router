@@ -5,13 +5,13 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { joinHome } from "@/lib/runtimeUserPaths";
 
 const execAsync = promisify(exec);
 
 const PROVIDER_NAME = "9router";
 
-const getDeepSeekDir = () => path.join(os.homedir(), ".deepseek");
+const getDeepSeekDir = () => joinHome(".deepseek");
 const getDeepSeekConfigPath = () => path.join(getDeepSeekDir(), "config.toml");
 
 // Simple TOML parser for key = "value" and [section] patterns
@@ -69,7 +69,7 @@ const DEFAULT_CONFIG = `provider = "deepseek"
 
 const checkDeepSeekInstalled = async () => {
     try {
-        const isWindows = os.platform() === "win32";
+        const isWindows = process.platform === "win32";
         const command = isWindows ? "where deepseek" : "which deepseek";
         await execAsync(command, { windowsHide: true });
         return true;

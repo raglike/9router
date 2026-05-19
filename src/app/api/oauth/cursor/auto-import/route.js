@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { access, constants } from "fs/promises";
-import { homedir } from "os";
 import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { getMacApplicationSupportDir, joinAppData, joinConfigHome, joinDataHome, joinLocalAppData } from "@/lib/runtimeUserPaths";
 
 const execFileAsync = promisify(execFile);
 
@@ -16,49 +16,26 @@ const MACHINE_ID_KEYS = [
 
 /** Get candidate db paths by platform */
 function getCandidatePaths(platform) {
-  const home = homedir();
-
   if (platform === "darwin") {
+    const base = getMacApplicationSupportDir();
     return [
-      join(
-        home,
-        "Library/Application Support/Cursor/User/globalStorage/state.vscdb",
-      ),
-      join(
-        home,
-        "Library/Application Support/Cursor - Insiders/User/globalStorage/state.vscdb",
-      ),
+      join(base, "Cursor", "User", "globalStorage", "state.vscdb"),
+      join(base, "Cursor - Insiders", "User", "globalStorage", "state.vscdb"),
     ];
   }
 
   if (platform === "win32") {
-    const appData = process.env.APPDATA || join(home, "AppData", "Roaming");
-    const localAppData =
-      process.env.LOCALAPPDATA || join(home, "AppData", "Local");
     return [
-      join(appData, "Cursor", "User", "globalStorage", "state.vscdb"),
-      join(
-        appData,
-        "Cursor - Insiders",
-        "User",
-        "globalStorage",
-        "state.vscdb",
-      ),
-      join(localAppData, "Cursor", "User", "globalStorage", "state.vscdb"),
-      join(
-        localAppData,
-        "Programs",
-        "Cursor",
-        "User",
-        "globalStorage",
-        "state.vscdb",
-      ),
+      joinAppData("Cursor", "User", "globalStorage", "state.vscdb"),
+      joinAppData("Cursor - Insiders", "User", "globalStorage", "state.vscdb"),
+      joinLocalAppData("Cursor", "User", "globalStorage", "state.vscdb"),
+      joinLocalAppData("Programs", "Cursor", "User", "globalStorage", "state.vscdb"),
     ];
   }
 
   return [
-    join(home, ".config/Cursor/User/globalStorage/state.vscdb"),
-    join(home, ".config/cursor/User/globalStorage/state.vscdb"),
+    joinConfigHome("Cursor", "User", "globalStorage", "state.vscdb"),
+    joinConfigHome("cursor", "User", "globalStorage", "state.vscdb"),
   ];
 }
 
@@ -204,8 +181,8 @@ export async function GET() {
         await execFileAsync("which", ["cursor"], { timeout: 5000 });
         cursorInstalled = true;
       } catch {
-        try {
-          const desktopFile = join(homedir(), ".local/share/applications/cursor.desktop");
+      try {
+          const desktopFile = joinDataHome("applications", "cursor.desktop");
           await access(desktopFile, constants.R_OK);
           cursorInstalled = true;
         } catch { /* not found */ }

@@ -5,17 +5,17 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { joinConfigHome } from "@/lib/runtimeUserPaths";
 
 const execAsync = promisify(exec);
 
-const getConfigDir = () => path.join(os.homedir(), ".config", "opencode");
+const getConfigDir = () => joinConfigHome("opencode");
 const getConfigPath = () => path.join(getConfigDir(), "opencode.json");
 
 // Check if opencode CLI is installed (via which/where or config file exists)
 const checkOpenCodeInstalled = async () => {
   try {
-    const isWindows = os.platform() === "win32";
+    const isWindows = process.platform === "win32";
     const command = isWindows ? "where opencode" : "which opencode";
     const env = isWindows
       ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }

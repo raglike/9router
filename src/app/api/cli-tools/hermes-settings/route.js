@@ -5,14 +5,14 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { joinHome } from "@/lib/runtimeUserPaths";
 
 const execAsync = promisify(exec);
 
 const PROVIDER_NAME = "9router";
 const API_KEY_ENV = "OPENAI_API_KEY";
 
-const getHermesDir = () => path.join(os.homedir(), ".hermes");
+const getHermesDir = () => joinHome(".hermes");
 const getHermesConfigPath = () => path.join(getHermesDir(), "config.yaml");
 const getHermesEnvPath = () => path.join(getHermesDir(), ".env");
 
@@ -60,7 +60,7 @@ const removeEnvVar = (envText, key) => {
 
 const checkHermesInstalled = async () => {
   try {
-    const isWindows = os.platform() === "win32";
+    const isWindows = process.platform === "win32";
     const command = isWindows ? "where hermes" : "which hermes";
     await execAsync(command, { windowsHide: true });
     return true;

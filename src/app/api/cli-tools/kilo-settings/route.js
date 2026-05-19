@@ -5,17 +5,17 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { joinConfigHome, joinDataHome } from "@/lib/runtimeUserPaths";
 
 const execAsync = promisify(exec);
 
-const getDataDir = () => path.join(os.homedir(), ".local", "share", "kilo");
+const getDataDir = () => joinDataHome("kilo");
 const getAuthPath = () => path.join(getDataDir(), "auth.json");
-const getVscodeSettingsPath = () => path.join(os.homedir(), ".config", "Code", "User", "settings.json");
+const getVscodeSettingsPath = () => joinConfigHome("Code", "User", "settings.json");
 
 const checkInstalled = async () => {
   try {
-    const isWindows = os.platform() === "win32";
+    const isWindows = process.platform === "win32";
     const command = isWindows ? "where kilo" : "which kilo";
     const env = isWindows
       ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }

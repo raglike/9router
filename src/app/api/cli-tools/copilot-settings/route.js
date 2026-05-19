@@ -3,19 +3,18 @@
 import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { getMacApplicationSupportDir, joinAppData, joinConfigHome } from "@/lib/runtimeUserPaths";
 
 // Resolve chatLanguageModels.json path per OS
 const getConfigPath = () => {
-  const home = os.homedir();
-  const platform = os.platform();
+  const platform = process.platform;
   if (platform === "win32") {
-    return path.join(process.env.APPDATA || home, "Code", "User", "chatLanguageModels.json");
+    return joinAppData("Code", "User", "chatLanguageModels.json");
   }
   if (platform === "darwin") {
-    return path.join(home, "Library", "Application Support", "Code", "User", "chatLanguageModels.json");
+    return path.join(getMacApplicationSupportDir(), "Code", "User", "chatLanguageModels.json");
   }
-  return path.join(home, ".config", "Code", "User", "chatLanguageModels.json");
+  return joinConfigHome("Code", "User", "chatLanguageModels.json");
 };
 
 const readConfig = async () => {

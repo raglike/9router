@@ -1,14 +1,14 @@
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
+const { joinAppData, joinHome } = require("../lib/runtimeUserPaths.cjs");
 
 const APP_NAME = "9router";
 
 function defaultDir() {
   if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), APP_NAME);
+    return joinAppData(APP_NAME);
   }
-  return path.join(os.homedir(), `.${APP_NAME}`);
+  return joinHome(`.${APP_NAME}`);
 }
 
 function getDataDir() {

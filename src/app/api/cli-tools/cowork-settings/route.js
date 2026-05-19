@@ -3,11 +3,11 @@
 import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
 import crypto from "crypto";
 import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, ALLOWED_MCP_COMMANDS, buildManagedMcpServers } from "@/shared/constants/coworkPlugins";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { DATA_DIR } from "@/lib/dataDir";
+import { getMacApplicationSupportDir, getProgramFilesDir, joinAppData, joinConfigHome, joinHome, joinLocalAppData } from "@/lib/runtimeUserPaths";
 
 const APP_PORT = UPDATER_CONFIG.appPort;
 
@@ -31,35 +31,32 @@ const SECURITY_RELAX = {
 // 3p schema requires explicit tool names; we mark "*" via operonSkipMcpApprovals instead.
 
 const getCandidateRoots = () => {
-  if (os.platform() === "darwin") {
-    const base = path.join(os.homedir(), "Library", "Application Support");
+  if (process.platform === "darwin") {
+    const base = getMacApplicationSupportDir();
     return [path.join(base, "Claude-3p"), path.join(base, "Claude")];
   }
-  if (os.platform() === "win32") {
-    const localApp = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
-    const roaming = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+  if (process.platform === "win32") {
     return [
-      path.join(localApp, "Claude-3p"),
-      path.join(roaming, "Claude-3p"),
-      path.join(localApp, "Claude"),
-      path.join(roaming, "Claude"),
+      joinLocalAppData("Claude-3p"),
+      joinAppData("Claude-3p"),
+      joinLocalAppData("Claude"),
+      joinAppData("Claude"),
     ];
   }
   return [
-    path.join(os.homedir(), ".config", "Claude-3p"),
-    path.join(os.homedir(), ".config", "Claude"),
+    joinConfigHome("Claude-3p"),
+    joinConfigHome("Claude"),
   ];
 };
 
 const getAppInstallPaths = () => {
-  if (os.platform() === "darwin") {
-    return ["/Applications/Claude.app", path.join(os.homedir(), "Applications", "Claude.app")];
+  if (process.platform === "darwin") {
+    return ["/Applications/Claude.app", joinHome("Applications", "Claude.app")];
   }
-  if (os.platform() === "win32") {
-    const localApp = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
-    const programFiles = process.env["ProgramFiles"] || "C:\\Program Files";
+  if (process.platform === "win32") {
+    const programFiles = getProgramFilesDir();
     return [
-      path.join(localApp, "AnthropicClaude"),
+      joinLocalAppData("AnthropicClaude"),
       path.join(programFiles, "Claude"),
       path.join(programFiles, "AnthropicClaude"),
     ];
@@ -85,12 +82,9 @@ const getMetaPath = async () => path.join(await getConfigDir(), "_meta.json");
 const getWriteMetaPath = () => path.join(getWriteConfigDir(), "_meta.json");
 
 const get1pRoot = () => {
-  if (os.platform() === "darwin") return path.join(os.homedir(), "Library", "Application Support", "Claude");
-  if (os.platform() === "win32") {
-    const roaming = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
-    return path.join(roaming, "Claude");
-  }
-  return path.join(os.homedir(), ".config", "Claude");
+  if (process.platform === "darwin") return path.join(getMacApplicationSupportDir(), "Claude");
+  if (process.platform === "win32") return joinAppData("Claude");
+  return joinConfigHome("Claude");
 };
 
 const get1pConfigPath = () => path.join(get1pRoot(), "claude_desktop_config.json");

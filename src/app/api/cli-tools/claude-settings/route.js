@@ -5,21 +5,18 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { joinHome } from "@/lib/runtimeUserPaths";
 
 const execAsync = promisify(exec);
 
 // Get claude settings path based on OS
-const getClaudeSettingsPath = () => {
-  const homeDir = os.homedir();
-  return path.join(homeDir, ".claude", "settings.json");
-};
+const getClaudeSettingsPath = () => joinHome(".claude", "settings.json");
 
 
 // Check if claude CLI is installed (via which/where or config file exists)
 const checkClaudeInstalled = async () => {
   try {
-    const isWindows = os.platform() === "win32";
+    const isWindows = process.platform === "win32";
     const command = isWindows ? "where claude" : "which claude";
     const env = isWindows
       ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }

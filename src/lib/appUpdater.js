@@ -1,7 +1,7 @@
 import { spawn, execSync } from "child_process";
 import path from "path";
 import fs from "fs";
-import os from "os";
+import { joinAppData, joinHome } from "@/lib/runtimeUserPaths";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 const KILL_TIMEOUT_MS = 5000;
@@ -12,8 +12,8 @@ function killMitmByPidFile() {
   try {
     const mitmPidFile = path.join(
       process.platform === "win32"
-        ? path.join(process.env.APPDATA || "", "9router")
-        : path.join(os.homedir(), ".9router"),
+        ? joinAppData("9router")
+        : joinHome(".9router"),
       "mitm",
       ".mitm.pid"
     );
@@ -99,9 +99,9 @@ function collectAppPids() {
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
   if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router");
+    return joinAppData("9router");
   }
-  return path.join(os.homedir(), ".9router");
+  return joinHome(".9router");
 }
 
 function resolveBundledUpdaterPath() {

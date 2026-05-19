@@ -3,12 +3,12 @@
 // and after every UI write.
 import fs from "fs";
 import path from "path";
-import os from "os";
+import { joinAppData, joinHome } from "@/lib/runtimeUserPaths";
 
 const DATA_DIR = process.env.DATA_DIR
   || (process.platform === "win32"
-    ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router")
-    : path.join(os.homedir(), ".9router"));
+    ? joinAppData("9router")
+    : joinHome(".9router"));
 
 const CACHE_FILE = path.join(DATA_DIR, "mitm", "aliases.json");
 

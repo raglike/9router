@@ -5,17 +5,17 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { joinHome } from "@/lib/runtimeUserPaths";
 
 const execAsync = promisify(exec);
 
-const getDataDir = () => path.join(os.homedir(), ".cline", "data");
+const getDataDir = () => joinHome(".cline", "data");
 const getGlobalStatePath = () => path.join(getDataDir(), "globalState.json");
 const getSecretsPath = () => path.join(getDataDir(), "secrets.json");
 
 const checkInstalled = async () => {
   try {
-    const isWindows = os.platform() === "win32";
+    const isWindows = process.platform === "win32";
     const command = isWindows ? "where cline" : "which cline";
     const env = isWindows
       ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }

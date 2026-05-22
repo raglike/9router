@@ -79,7 +79,7 @@ async function fetchCompatibleModelIds(connection) {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(url, {
       method: "GET",
-      headers,
+      headers: { ...headers, "x-9router-internal": "1" },
       cache: "no-store",
       signal: controller.signal,
     });
@@ -412,6 +412,11 @@ export async function OPTIONS() {
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
 export async function GET(request) {
+  // Break self-reference loop: internal probes from fetchCompatibleModelIds return empty
+  if (request.headers.get("x-9router-internal") === "1") {
+    return Response.json({ object: "list", data: [] }, { headers: buildCorsHeaders() });
+  }
+
   try {
     const authError = await authorizeModelsRequest(request);
     if (authError) return authError;

@@ -25,6 +25,10 @@ export async function OPTIONS() {
  * Supported kinds: image, tts, stt, embedding, image-to-text, web.
  */
 export async function GET(_request, { params }) {
+  if (_request.headers.get("x-9router-internal") === "1") {
+    return Response.json({ object: "list", data: [] }, { headers: { "Access-Control-Allow-Origin": "*" } });
+  }
+
   try {
     const authError = await authorizeModelsRequest(_request);
     if (authError) return authError;
